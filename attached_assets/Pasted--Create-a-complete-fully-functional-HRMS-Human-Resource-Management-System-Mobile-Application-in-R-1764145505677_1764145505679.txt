@@ -1,0 +1,220 @@
+**Create a complete fully-functional HRMS (Human Resource Management System) Mobile Application in React Native with the BEST possible UI/UX design using a Yellow (#FFC300) and Black (#000000) colour theme. The output should include full folder structure, navigation, reusable components, API handlers, screens, styles, and dummy data. Build for both Android & iOS.**
+
+---
+
+# **APP NAME:** HRMS Pro
+
+# **PRIMARY COLORS:**
+
+* **Yellow:** #FFC300
+* **Black:** #000000
+* **White:** #FFFFFF
+
+---
+
+# **Include ALL HRMS Features (Nothing should be left):**
+
+## **1. Authentication Module**
+
+* Login (Email + Password)
+* Forgot Password
+* OTP Verification
+* Create Password / Reset Password
+* Splash Screen
+* Onboarding Slides (3 screens, animated)
+
+---
+
+## **2. Home Dashboard (After Login)**
+
+* Greeting with Employee Name
+* Date & Day
+* Live Clock
+* **Check-In Button**
+* **Check-Out Button**
+* Total Hours Worked Today
+* Current Status: Present / Absent / On Break
+* Today’s Attendance Summary
+* Quick Shortcuts:
+
+  * Attendance
+  * Leaves
+  * Tasks
+  * Payroll
+  * Profile
+  * Announcements
+
+---
+
+## **3. Bottom Navigation Tabs**
+
+* **Home**
+* **Attendance**
+* **Leave**
+* **Tasks**
+* **Profile**
+
+---
+
+# **4. Attendance Module**
+
+* Today Attendance Details
+* Check-In History
+* Check-Out History
+* GPS-based location capture
+* IP-based attendance option
+* Monthly Attendance Calendar (Fully Interactive)
+* Mark Half-Day
+* Show Late Marks
+* Show Overtime Hours
+* Filters (Date/from-to)
+
+---
+
+# **5. Leave Management**
+
+* Apply for Leave
+* Choose Leave Type:
+
+  * Casual Leave
+  * Sick Leave
+  * Privilege Leave
+  * Work From Home
+* Upload Documents (e.g. Medical Certificate)
+* Leave Balance Screen
+* Leave History
+* Leave Approval Status (Pending/Approved/Rejected)
+* Leave Approver Flow (dummy APIs)
+
+---
+
+# **6. Task Management**
+
+* Assigned Tasks
+* Task Status:
+
+  * Pending
+  * In Progress
+  * Completed
+* Task Priority: Low, Medium, High
+* Due Date
+* Upload Attachments
+* Add Comments on Task
+* Task Timeline UI
+
+---
+
+# **7. Payroll Module**
+
+* Monthly Salary Slip PDF Download
+* View Earnings & Deductions
+* PF / ESI / Professional Tax Details
+* Download Previous Months Salary Slips
+* Show Bank Details
+* Show Payroll Summary Card
+
+---
+
+# **8. Holiday Module**
+
+* Company Holiday List
+* Public Holidays
+* Optional Holidays
+* Mark Favourite Holidays
+
+---
+
+# **9. Announcements / Notices**
+
+* Company-wide Announcements
+* HR Notices
+* Policy Updates
+* Push Notifications for New Announcements
+
+---
+
+# **10. Profile Module**
+
+* Employee Photo + Info
+* Name, Role, Employee ID
+* Department
+* Phone, Email
+* Address
+* Emergency Contact
+* Bank Account Details
+* Documents Upload
+* Update Profile
+* Logout Button
+
+---
+
+# **11. Settings Page**
+
+* Dark Mode (Black + Yellow theme)
+* Notification Control
+* Change Password
+* App Version
+* Help Center
+* Contact HR
+
+---
+
+# **12. Admin (If possible in same app)**
+
+* Approve / Reject Leaves
+* Approve Attendance Corrections
+* Assign Tasks
+* Employee List
+
+---
+
+# **TECHNICAL REQUIREMENTS**
+
+## **React Native Setup**
+
+* Use latest React Native + Expo
+* React Navigation (Stack + Tab + Drawer)
+* Axios for API Calls
+* AsyncStorage or SecureStore for tokens
+* Context API or Zustand for global state
+* Reusable Components:
+
+  * CustomButton
+  * InputField
+  * Card
+  * CalendarComponent
+  * Header
+  * BottomSheet
+  * ModalPopup
+  * TaskCard
+  * LeaveCard
+  * AttendanceCard
+
+---
+
+# **UI/UX Requirements**
+
+* **Yellow + Black premium theme**
+* Rounded Cards
+* Material Icons or Lucide Icons
+* Smooth animations (React Native Reanimated)
+* Skeleton loaders
+* Pull to refresh on all list screens
+* Professional spacing, shadow, and modern layout
+
+---
+
+# **Final Output Required**
+
+* Complete Source Code
+* Full folder structure
+* Navigation setup
+* All screens implemented
+* Dummy API integration
+* Reusable styles
+* Context / Zustand state management
+* Comments explaining logic
+* Working Check-In / Check-Out functionality (locally saved)
+* Preview GIFs/Snippets if possible
+
+**The app must be fully responsive, production-grade, and visually stunning. Build everything end-to-end without leaving anything.**
