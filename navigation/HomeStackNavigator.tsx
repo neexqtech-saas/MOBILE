@@ -8,7 +8,7 @@ import ExpenseScreen from "@/screens/ExpenseScreen";
 import CreateExpenseScreen from "@/screens/CreateExpenseScreen";
 import VisitScreen from "@/screens/VisitScreen";
 import CreateVisitScreen from "@/screens/CreateVisitScreen";
-import { HeaderTitle } from "@/components/HeaderTitle";
+import { ProfessionalHeader } from "@/components/ProfessionalHeader";
 import { HeaderRight } from "@/components/HeaderRight";
 import { useTheme } from "@/hooks/useTheme";
 import { getCommonScreenOptions } from "@/navigation/screenOptions";
@@ -39,52 +39,57 @@ export default function HomeStackNavigator() {
         name="Home"
         component={HomeScreen}
         options={{
-          headerTitle: () => <HeaderTitle title="" />,
-          headerRight: () => <HeaderRight />,
-          headerTitleAlign: "left",
-          headerStyle: {
-            backgroundColor: "#FFE8CC",
-          },
-          headerTintColor: "#5D4037",
-          headerTitleStyle: {
-            color: "#5D4037",
-          },
+          header: () => <ProfessionalHeader title="" rightComponent={<HeaderRight />} showBackButton={false} />,
         }}
       />
       <Stack.Screen
         name="Payroll"
         component={PayrollScreen}
-        options={{ headerTitle: "Payroll" }}
+        options={{
+          header: () => <ProfessionalHeader title="Payroll" />,
+        }}
       />
       <Stack.Screen
         name="Holidays"
         component={HolidayScreen}
-        options={{ headerTitle: "Holidays" }}
+        options={{
+          header: () => <ProfessionalHeader title="Holidays" />,
+        }}
       />
       <Stack.Screen
         name="Announcements"
         component={AnnouncementScreen}
-        options={{ headerTitle: "Announcements" }}
+        options={{
+          header: () => <ProfessionalHeader title="Announcements" />,
+        }}
       />
       <Stack.Screen
         name="Expenses"
         component={ExpenseScreen}
-        options={{ headerTitle: "Expenses" }}
+        options={{
+          header: () => <ProfessionalHeader title="Expenses" />,
+        }}
       />
       <Stack.Screen
         name="CreateExpense"
         component={CreateExpenseScreen}
-        options={{ headerTitle: "Create Expense" }}
+        options={{
+          header: () => <ProfessionalHeader title="Create Expense" />,
+        }}
       />
       <Stack.Screen
         name="Visits"
         component={VisitScreen}
-        options={{ headerTitle: "Visits" }}
+        options={{
+          header: () => <ProfessionalHeader title="Visits" />,
+        }}
       />
       <Stack.Screen
         name="CreateVisit"
         component={CreateVisitScreen}
-        options={{ headerTitle: "Create Visit" }}
+        options={{
+          header: () => <ProfessionalHeader title="Create Visit" />,
+        }}
       />
     </Stack.Navigator>
   );

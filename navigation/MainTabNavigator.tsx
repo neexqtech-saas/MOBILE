@@ -12,6 +12,7 @@ import ProfileStackNavigator from "@/navigation/ProfileStackNavigator";
 import ContactUsScreen from "@/screens/ContactUsScreen";
 import HelpScreen from "@/screens/HelpScreen";
 import AboutUsScreen from "@/screens/AboutUsScreen";
+import { ProfessionalHeader } from "@/components/ProfessionalHeader";
 import { useTheme } from "@/hooks/useTheme";
 import { Colors } from "@/constants/theme";
 
@@ -36,7 +37,7 @@ export default function MainTabNavigator() {
     <Tab.Navigator
       initialRouteName="HomeTab"
       screenOptions={{
-        tabBarActiveTintColor: "#FFB380",
+        tabBarActiveTintColor: "#2563EB",
         tabBarInactiveTintColor: "#757575",
         tabBarLabelStyle: {
           fontSize: 12,
@@ -49,9 +50,9 @@ export default function MainTabNavigator() {
         tabBarStyle: {
           backgroundColor: "#FFFFFF",
           borderTopWidth: 1.5,
-          borderTopColor: "#FFE0CC",
+          borderTopColor: "#DBEAFE",
           elevation: 8,
-          shadowColor: "#FFB380",
+          shadowColor: "#2563EB",
           shadowOffset: { width: 0, height: -2 },
           shadowOpacity: 0.1,
           shadowRadius: 4,
@@ -61,7 +62,7 @@ export default function MainTabNavigator() {
         },
         headerShown: true,
         headerStyle: {
-          backgroundColor: "#FFE8CC",
+          backgroundColor: "#EFF6FF",
         },
         headerTintColor: "#5D4037",
         headerTitleStyle: {
@@ -84,21 +85,27 @@ export default function MainTabNavigator() {
         name="AttendanceTab"
         component={AttendanceStackNavigator}
         options={{
+          title: "",
           tabBarButton: () => null,
+          headerShown: false,
         }}
       />
       <Tab.Screen
         name="LeaveTab"
         component={LeaveStackNavigator}
         options={{
+          title: "",
           tabBarButton: () => null,
+          headerShown: false,
         }}
       />
       <Tab.Screen
         name="TaskTab"
         component={TaskStackNavigator}
         options={{
+          title: "",
           tabBarButton: () => null,
+          headerShown: false,
         }}
       />
       <Tab.Screen
@@ -119,7 +126,7 @@ export default function MainTabNavigator() {
         name="ContactUs"
         component={ContactUsScreen}
         options={{
-          title: "Contact Us",
+          header: () => <ProfessionalHeader title="Contact Us" showBackButton={false} />,
           tabBarIcon: ({ color, size }) => (
             <Feather name="mail" size={size} color={color} />
           ),
@@ -129,7 +136,7 @@ export default function MainTabNavigator() {
         name="Help"
         component={HelpScreen}
         options={{
-          title: "Help",
+          header: () => <ProfessionalHeader title="Help" showBackButton={false} />,
           tabBarIcon: ({ color, size }) => (
             <Feather name="help-circle" size={size} color={color} />
           ),
@@ -139,7 +146,7 @@ export default function MainTabNavigator() {
         name="About"
         component={AboutUsScreen}
         options={{
-          title: "About",
+          header: () => <ProfessionalHeader title="About" showBackButton={false} />,
           tabBarIcon: ({ color, size }) => (
             <Feather name="info" size={size} color={color} />
           ),

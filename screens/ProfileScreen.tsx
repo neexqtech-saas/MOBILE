@@ -3,6 +3,7 @@ import { View, StyleSheet, Pressable, Alert } from "react-native";
 import { Feather } from "@expo/vector-icons";
 import { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { useNavigation } from "@react-navigation/native";
+import * as Haptics from "expo-haptics";
 
 import { ScreenScrollView } from "@/components/ScreenScrollView";
 import { ThemedText } from "@/components/ThemedText";
@@ -23,15 +24,38 @@ export default function ProfileScreen() {
   const { employee, logout } = useHRMSStore();
 
   const handleLogout = () => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     Alert.alert(
       "Logout",
       "Are you sure you want to logout?",
       [
-        { text: "Cancel", style: "cancel" },
+        { 
+          text: "Cancel", 
+          style: "cancel",
+          onPress: () => {
+            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+          }
+        },
         {
           text: "Logout",
           style: "destructive",
-          onPress: () => logout(),
+          onPress: async () => {
+            try {
+              Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+              console.log('🚪 Logging out...');
+              await logout();
+              console.log('✅ Logout completed - redirecting to login');
+              // Navigation will happen automatically via App.tsx when isAuthenticated becomes false
+            } catch (error) {
+              console.error('❌ Logout error:', error);
+              Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+              Alert.alert(
+                "Error",
+                "Failed to logout. Please try again.",
+                [{ text: "OK" }]
+              );
+            }
+          },
         },
       ]
     );
@@ -128,11 +152,15 @@ export default function ProfileScreen() {
         onPress={handleLogout}
         style={({ pressed }) => [
           styles.logoutButton,
-          { borderColor: Colors.dark.error, opacity: pressed ? 0.9 : 1 },
+          { 
+            borderColor: "#2563EB", 
+            opacity: pressed ? 0.9 : 1,
+            transform: [{ scale: pressed ? 0.98 : 1 }],
+          },
         ]}
       >
-        <Feather name="log-out" size={20} color={Colors.dark.error} />
-        <ThemedText style={{ color: Colors.dark.error, fontWeight: "600" }}>
+        <Feather name="log-out" size={20} color="#2563EB" />
+        <ThemedText style={{ color: "#2563EB", fontWeight: "600" }}>
           Logout
         </ThemedText>
       </Pressable>

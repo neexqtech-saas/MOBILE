@@ -2,6 +2,7 @@ import React from "react";
 import { createNativeStackNavigator } from "@react-navigation/native-stack";
 import LeaveScreen from "@/screens/LeaveScreen";
 import ApplyLeaveScreen from "@/screens/ApplyLeaveScreen";
+import { ProfessionalHeader } from "@/components/ProfessionalHeader";
 import { useTheme } from "@/hooks/useTheme";
 import { getCommonScreenOptions } from "@/navigation/screenOptions";
 
@@ -21,23 +22,14 @@ export default function LeaveStackNavigator() {
         name="Leave"
         component={LeaveScreen}
         options={{
-          title: "Leave Management",
+          header: () => <ProfessionalHeader title="Leave Management" showBackButton={true} />,
         }}
       />
       <Stack.Screen
         name="ApplyLeave"
         component={ApplyLeaveScreen}
         options={{
-          title: "Apply Leave",
-          headerTransparent: false,
-          headerStyle: {
-            backgroundColor: "#FFE8CC",
-          },
-          headerTintColor: "#5D4037",
-          headerTitleStyle: {
-            color: "#5D4037",
-            fontWeight: "600",
-          },
+          header: () => <ProfessionalHeader title="Apply Leave" />,
         }}
       />
     </Stack.Navigator>

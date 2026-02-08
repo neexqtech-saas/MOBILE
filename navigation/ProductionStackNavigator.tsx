@@ -1,5 +1,6 @@
 import React from "react";
 import { createNativeStackNavigator } from "@react-navigation/native-stack";
+import { ProfessionalHeader } from "@/components/ProfessionalHeader";
 import { useTheme } from "@/hooks/useTheme";
 import { getCommonScreenOptions } from "@/navigation/screenOptions";
 import ProductionDashboardScreen from "@/screens/production/ProductionDashboardScreen";
@@ -52,237 +53,105 @@ export default function ProductionStackNavigator() {
         name="ProductionDashboard"
         component={ProductionDashboardScreen}
         options={{
-          headerTitle: "Production",
-          headerTransparent: false,
-          headerStyle: {
-            backgroundColor: "#FFE8CC",
-          },
-          headerTintColor: "#5D4037",
-          headerTitleStyle: {
-            color: "#5D4037",
-            fontWeight: "600",
-          },
+          header: () => <ProfessionalHeader title="Production" showBackButton={false} />,
         }}
       />
       <Stack.Screen
         name="WorkOrders"
         component={WorkOrdersScreen}
         options={{
-          headerTitle: "Work Orders",
-          headerTransparent: false,
-          headerStyle: {
-            backgroundColor: "#FFE8CC",
-          },
-          headerTintColor: "#5D4037",
-          headerTitleStyle: {
-            color: "#5D4037",
-            fontWeight: "600",
-          },
+          header: () => <ProfessionalHeader title="Work Orders" />,
         }}
       />
       <Stack.Screen
         name="WorkOrderDetail"
         component={WorkOrderDetailScreen}
         options={{
-          headerTitle: "Work Order Details",
-          headerTransparent: false,
-          headerStyle: {
-            backgroundColor: "#FFE8CC",
-          },
-          headerTintColor: "#5D4037",
-          headerTitleStyle: {
-            color: "#5D4037",
-          },
+          header: () => <ProfessionalHeader title="Work Order Details" />,
         }}
       />
       <Stack.Screen
         name="ProductionEntries"
         component={ProductionEntriesScreen}
         options={{
-          headerTitle: "Production Entries",
-          headerTransparent: false,
-          headerStyle: {
-            backgroundColor: "#FFE8CC",
-          },
-          headerTintColor: "#5D4037",
-          headerTitleStyle: {
-            color: "#5D4037",
-          },
+          header: () => <ProfessionalHeader title="Production Entries" />,
         }}
       />
       <Stack.Screen
         name="ProductionEntryForm"
         component={ProductionEntryFormScreen}
         options={{
-          headerTitle: "Production Entry",
-          headerTransparent: false,
-          headerStyle: {
-            backgroundColor: "#FFE8CC",
-          },
-          headerTintColor: "#5D4037",
-          headerTitleStyle: {
-            color: "#5D4037",
-          },
+          header: () => <ProfessionalHeader title="Production Entry" />,
         }}
       />
       <Stack.Screen
         name="MaterialRequisitions"
         component={MaterialRequisitionsScreen}
         options={{
-          headerTitle: "Material Requisitions",
-          headerTransparent: false,
-          headerStyle: {
-            backgroundColor: "#FFE8CC",
-          },
-          headerTintColor: "#5D4037",
-          headerTitleStyle: {
-            color: "#5D4037",
-            fontWeight: "600",
-          },
+          header: () => <ProfessionalHeader title="Material Requisitions" />,
         }}
       />
       <Stack.Screen
         name="MaterialReturns"
         component={MaterialReturnsScreen}
         options={{
-          headerTitle: "Material Returns",
-          headerTransparent: false,
-          headerStyle: {
-            backgroundColor: "#FFE8CC",
-          },
-          headerTintColor: "#5D4037",
-          headerTitleStyle: {
-            color: "#5D4037",
-            fontWeight: "600",
-          },
+          header: () => <ProfessionalHeader title="Material Returns" />,
         }}
       />
       <Stack.Screen
         name="ScrapEntries"
         component={ScrapEntriesScreen}
         options={{
-          headerTitle: "Scrap Entries",
-          headerTransparent: false,
-          headerStyle: {
-            backgroundColor: "#FFE8CC",
-          },
-          headerTintColor: "#5D4037",
-          headerTitleStyle: {
-            color: "#5D4037",
-            fontWeight: "600",
-          },
+          header: () => <ProfessionalHeader title="Scrap Entries" />,
         }}
       />
       <Stack.Screen
         name="MachineDowntime"
         component={MachineDowntimeScreen}
         options={{
-          headerTitle: "Machine Downtime",
-          headerTransparent: false,
-          headerStyle: {
-            backgroundColor: "#FFE8CC",
-          },
-          headerTintColor: "#5D4037",
-          headerTitleStyle: {
-            color: "#5D4037",
-            fontWeight: "600",
-          },
+          header: () => <ProfessionalHeader title="Machine Downtime" />,
         }}
       />
       <Stack.Screen
         name="MaterialRequisitionForm"
         component={MaterialRequisitionFormScreen}
         options={{
-          headerTitle: "Create Material Requisition",
-          headerTransparent: false,
-          headerStyle: {
-            backgroundColor: "#FFE8CC",
-          },
-          headerTintColor: "#5D4037",
-          headerTitleStyle: {
-            color: "#5D4037",
-            fontWeight: "600",
-          },
+          header: () => <ProfessionalHeader title="Create Material Requisition" />,
         }}
       />
       <Stack.Screen
         name="MaterialReturnForm"
         component={MaterialReturnFormScreen}
         options={{
-          headerTitle: "Create Material Return",
-          headerTransparent: false,
-          headerStyle: {
-            backgroundColor: "#FFE8CC",
-          },
-          headerTintColor: "#5D4037",
-          headerTitleStyle: {
-            color: "#5D4037",
-            fontWeight: "600",
-          },
+          header: () => <ProfessionalHeader title="Create Material Return" />,
         }}
       />
       <Stack.Screen
         name="ScrapEntryForm"
         component={ScrapEntryFormScreen}
         options={{
-          headerTitle: "Create Scrap Entry",
-          headerTransparent: false,
-          headerStyle: {
-            backgroundColor: "#FFE8CC",
-          },
-          headerTintColor: "#5D4037",
-          headerTitleStyle: {
-            color: "#5D4037",
-            fontWeight: "600",
-          },
+          header: () => <ProfessionalHeader title="Create Scrap Entry" />,
         }}
       />
       <Stack.Screen
         name="MachineDowntimeForm"
         component={MachineDowntimeFormScreen}
         options={{
-          headerTitle: "Report Downtime",
-          headerTransparent: false,
-          headerStyle: {
-            backgroundColor: "#FFE8CC",
-          },
-          headerTintColor: "#5D4037",
-          headerTitleStyle: {
-            color: "#5D4037",
-            fontWeight: "600",
-          },
+          header: () => <ProfessionalHeader title="Report Downtime" />,
         }}
       />
       <Stack.Screen
         name="AssignedMachines"
         component={AssignedMachinesScreen}
         options={{
-          headerTitle: "Assigned Machines",
-          headerTransparent: false,
-          headerStyle: {
-            backgroundColor: "#FFE8CC",
-          },
-          headerTintColor: "#5D4037",
-          headerTitleStyle: {
-            color: "#5D4037",
-            fontWeight: "600",
-          },
+          header: () => <ProfessionalHeader title="Assigned Machines" />,
         }}
       />
       <Stack.Screen
         name="MachineDetail"
         component={MachineDetailScreen}
         options={{
-          headerTitle: "Machine Details",
-          headerTransparent: false,
-          headerStyle: {
-            backgroundColor: "#FFE8CC",
-          },
-          headerTintColor: "#5D4037",
-          headerTitleStyle: {
-            color: "#5D4037",
-            fontWeight: "600",
-          },
+          header: () => <ProfessionalHeader title="Machine Details" />,
         }}
       />
     </Stack.Navigator>

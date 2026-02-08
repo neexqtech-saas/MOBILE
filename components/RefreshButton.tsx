@@ -21,9 +21,9 @@ export function RefreshButton({ onPress, isLoading = false, label = "Refresh" }:
       ]}
     >
       {isLoading ? (
-        <ActivityIndicator size="small" color="#FFB380" />
+        <ActivityIndicator size="small" color="#2563EB" />
       ) : (
-        <Feather name="refresh-cw" size={18} color="#FFB380" />
+        <Feather name="refresh-cw" size={18} color="#2563EB" />
       )}
       <ThemedText type="small" style={styles.refreshButtonText}>
         {isLoading ? "Refreshing..." : label}
@@ -41,13 +41,13 @@ const styles = StyleSheet.create({
     paddingVertical: Spacing.sm,
     borderRadius: BorderRadius.md,
     borderWidth: 1.5,
-    borderColor: "#FFE0CC",
+    borderColor: "#DBEAFE",
     backgroundColor: "#FFFFFF",
   },
   refreshButtonText: {
     fontSize: 12,
     fontWeight: "600",
-    color: "#FFB380",
+    color: "#2563EB",
   },
 });
 

@@ -4,6 +4,16 @@ const { spawn } = require("child_process");
 const { Readable } = require("stream");
 const { pipeline } = require("stream/promises");
 
+// .env se Metro URL (scripts folder ke parent = MOBILE root)
+const envPath = path.join(__dirname, "..", ".env");
+if (fs.existsSync(envPath)) {
+  const envContent = fs.readFileSync(envPath, "utf-8");
+  envContent.split("\n").forEach((line) => {
+    const m = line.match(/^\s*EXPO_METRO_URL\s*=\s*(.+)\s*$/);
+    if (m) process.env.EXPO_METRO_URL = m[1].trim().replace(/^["']|["']$/g, "");
+  });
+}
+const METRO_BASE_URL = process.env.EXPO_METRO_URL || "http://localhost:8081";
 
 let metroProcess = null;
 
@@ -86,7 +96,7 @@ function clearMetroCache() {
 
 async function checkMetroHealth() {
   try {
-    const response = await fetch("http://localhost:8081/status");
+    const response = await fetch(`${METRO_BASE_URL}/status`);
     return response.ok;
   } catch {
     return false;
@@ -144,7 +154,7 @@ async function downloadFile(url, outputPath) {
 }
 
 async function downloadBundle(platform, timestamp) {
-  const url = new URL("http://localhost:8081/index.bundle");
+  const url = new URL(`${METRO_BASE_URL}/index.bundle`);
   url.searchParams.set("platform", platform);
   url.searchParams.set("dev", "false");
   url.searchParams.set("hot", "false");
@@ -169,7 +179,7 @@ async function downloadBundle(platform, timestamp) {
 }
 
 async function downloadManifest(platform) {
-  const response = await fetch("http://localhost:8081/manifest", {
+  const response = await fetch(`${METRO_BASE_URL}/manifest`, {
     headers: { "expo-platform": platform },
   });
 
@@ -234,7 +244,7 @@ function extractAssets(timestamp) {
       const originalPath = match[1];
       const filename = match[3] + "." + match[4];
 
-      const tempUrl = new URL(`http://localhost:8081${originalPath}`);
+      const tempUrl = new URL(`${METRO_BASE_URL}${originalPath}`);
       const unstablePath = tempUrl.searchParams.get("unstable_path");
 
       if (!unstablePath) {
@@ -278,7 +288,7 @@ async function downloadAssets(assets, timestamp) {
   const downloadPromises = assets.map(async (asset) => {
     const platform = Array.from(asset.platforms)[0];
 
-    const tempUrl = new URL(`http://localhost:8081${asset.originalPath}`);
+    const tempUrl = new URL(`${METRO_BASE_URL}${asset.originalPath}`);
     const unstablePath = tempUrl.searchParams.get("unstable_path");
 
     if (!unstablePath) {
@@ -287,7 +297,7 @@ async function downloadAssets(assets, timestamp) {
 
     const decodedPath = decodeURIComponent(unstablePath).replace(/^\./, "");
     const metroUrl = new URL(
-      `http://localhost:8081${path.posix.join("/assets", decodedPath, asset.filename)}`,
+      `${METRO_BASE_URL}${path.posix.join("/assets", decodedPath, asset.filename)}`,
     );
     metroUrl.searchParams.set("platform", platform);
     metroUrl.searchParams.set("hash", asset.hash);
@@ -346,7 +356,7 @@ function updateBundleUrls(timestamp, baseUrl) {
     bundle = bundle.replace(
       /httpServerLocation:"(\/[^"]+)"/g,
       (_match, capturedPath) => {
-        const tempUrl = new URL(`http://localhost:8081${capturedPath}`);
+        const tempUrl = new URL(`${METRO_BASE_URL}${capturedPath}`);
         const unstablePath = tempUrl.searchParams.get("unstable_path");
 
         if (!unstablePath) {

@@ -2,6 +2,7 @@ import React from "react";
 import { createNativeStackNavigator } from "@react-navigation/native-stack";
 import TaskScreen from "@/screens/TaskScreen";
 import TaskDetailScreen from "@/screens/TaskDetailScreen";
+import { ProfessionalHeader } from "@/components/ProfessionalHeader";
 import { useTheme } from "@/hooks/useTheme";
 import { getCommonScreenOptions } from "@/navigation/screenOptions";
 
@@ -21,32 +22,14 @@ export default function TaskStackNavigator() {
         name="Tasks"
         component={TaskScreen}
         options={{
-          title: "My Tasks",
-          headerTransparent: false,
-          headerStyle: {
-            backgroundColor: "#FFE8CC",
-          },
-          headerTintColor: "#5D4037",
-          headerTitleStyle: {
-            color: "#5D4037",
-            fontWeight: "600",
-          },
+          header: () => <ProfessionalHeader title="My Tasks" showBackButton={true} />,
         }}
       />
       <Stack.Screen
         name="TaskDetail"
         component={TaskDetailScreen}
         options={{
-          title: "Task Details",
-          headerTransparent: false,
-          headerStyle: {
-            backgroundColor: "#FFE8CC",
-          },
-          headerTintColor: "#5D4037",
-          headerTitleStyle: {
-            color: "#5D4037",
-            fontWeight: "600",
-          },
+          header: () => <ProfessionalHeader title="Task Details" />,
         }}
       />
     </Stack.Navigator>

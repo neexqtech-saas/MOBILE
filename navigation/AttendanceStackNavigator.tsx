@@ -1,6 +1,7 @@
 import React from "react";
 import { createNativeStackNavigator } from "@react-navigation/native-stack";
 import AttendanceScreen from "@/screens/AttendanceScreen";
+import { ProfessionalHeader } from "@/components/ProfessionalHeader";
 import { useTheme } from "@/hooks/useTheme";
 import { getCommonScreenOptions } from "@/navigation/screenOptions";
 
@@ -19,7 +20,7 @@ export default function AttendanceStackNavigator() {
         name="Attendance"
         component={AttendanceScreen}
         options={{
-          title: "Attendance",
+          header: () => <ProfessionalHeader title="Attendance" showBackButton={true} />,
         }}
       />
     </Stack.Navigator>

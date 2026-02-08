@@ -5,6 +5,43 @@ import type { AttendanceHistoryItem, TaskAPI, AssignedProject } from "@/services
 import * as ImagePicker from "expo-image-picker";
 import { Platform, Alert } from "react-native";
 import { validateFaceImage } from "@/utils/faceDetection";
+import * as Notifications from "expo-notifications";
+import * as Device from "expo-device";
+
+// Helper function to get FCM/Expo Push Token
+async function getFcmToken(): Promise<string | null> {
+  try {
+    // Check if running on a physical device
+    if (!Device.isDevice) {
+      console.warn('⚠️ FCM tokens are only available on physical devices');
+      return null;
+    }
+
+    // Request notification permissions
+    const { status: existingStatus } = await Notifications.getPermissionsAsync();
+    let finalStatus = existingStatus;
+    
+    if (existingStatus !== 'granted') {
+      const { status } = await Notifications.requestPermissionsAsync();
+      finalStatus = status;
+    }
+    
+    if (finalStatus !== 'granted') {
+      console.warn('⚠️ Notification permissions not granted');
+      return null;
+    }
+
+    // Get the Expo Push Token (which works as FCM token for Expo apps)
+    const tokenData = await Notifications.getExpoPushTokenAsync();
+    const token = tokenData.data;
+    
+    console.log('📱 FCM/Expo Push Token obtained:', token);
+    return token;
+  } catch (error) {
+    console.error('❌ Error getting FCM token:', error);
+    return null;
+  }
+}
 
 export interface Employee {
   id: string;
@@ -23,6 +60,7 @@ export interface Employee {
   adminId?: string; // Admin ID for attendance API calls
   siteId?: string; // Site ID from session info for attendance API calls
   assignedProject?: AssignedProject; // First assigned project from session info
+  isPhotoUpdated?: boolean; // Flag to track if profile photo has been updated
 }
 
 export interface MultipleCheckEntry {
@@ -508,17 +546,51 @@ export const useHRMSStore = create<HRMSState>((set, get) => ({
             console.log('✅ adminId set from session info:', adminId);
           }
 
+          // Store FCM token after successful login
+          try {
+            const fcmToken = await getFcmToken();
+            if (fcmToken && userData.user_id) {
+              console.log('📱 Storing FCM token for user:', userData.user_id);
+              await apiService.updateFcmToken(userData.user_id, fcmToken);
+              console.log('✅ FCM token stored successfully');
+            } else {
+              console.warn('⚠️ FCM token not available or user_id missing');
+            }
+          } catch (fcmError) {
+            console.error('❌ Error storing FCM token:', fcmError);
+            // Don't fail login if FCM token storage fails
+          }
+
+          // Store is_photo_updated flag in employee state
+          const isPhotoUpdated = userData.is_photo_updated !== false; // Default to true if not explicitly false
+          
+          set((state) => ({
+            employee: {
+              ...state.employee,
+              isPhotoUpdated: userData.is_photo_updated ?? true, // Store the flag
+            }
+          }));
+
           // Check if is_photo_updated is false - then capture selfie immediately
+          // Only open camera if flag is explicitly false AND not already updated
           if (userData.is_photo_updated === false) {
-            console.log('📸 is_photo_updated is false - opening camera immediately for selfie');
-            // Trigger profile photo capture immediately after login
-            setTimeout(async () => {
-              try {
-                await get().captureAndUploadProfilePhoto();
-              } catch (error) {
-                console.error('❌ Error capturing profile photo after login:', error);
-              }
-            }, 300); // Minimal delay to ensure navigation starts
+            const currentState = get();
+            // Double check: only open if flag is still false in state
+            if (currentState.employee.isPhotoUpdated === false) {
+              console.log('📸 is_photo_updated is false - opening camera immediately for selfie');
+              // Trigger profile photo capture immediately after login
+              setTimeout(async () => {
+                try {
+                  await get().captureAndUploadProfilePhoto();
+                } catch (error) {
+                  console.error('❌ Error capturing profile photo after login:', error);
+                }
+              }, 300); // Minimal delay to ensure navigation starts
+            } else {
+              console.log('✅ Photo already updated, skipping camera');
+            }
+          } else {
+            console.log('✅ is_photo_updated is true or undefined, skipping camera');
           }
         } else {
           console.warn('⚠️ Session info response missing success or data:', sessionInfo);
@@ -585,12 +657,15 @@ export const useHRMSStore = create<HRMSState>((set, get) => ({
         paySlips: mockPaySlips,
         holidays: mockHolidays,
         announcements: mockAnnouncements,
-        employee: mockEmployee,
+        employee: {
+          ...mockEmployee,
+          isPhotoUpdated: undefined, // Reset photo flag
+        },
         notificationsEnabled: true,
         organizationSettings: null,
       });
       
-      console.log('✅ Logout successful - access token cleared, redirecting to login page');
+      console.log('✅ Logout successful - all state cleared, redirecting to login page');
     } catch (error) {
       console.error('❌ Error during logout:', error);
       // Still clear the state even if storage fails
@@ -599,7 +674,10 @@ export const useHRMSStore = create<HRMSState>((set, get) => ({
         isLoading: false,
         todayAttendance: null,
         attendanceHistory: [],
-        employee: mockEmployee,
+        employee: {
+          ...mockEmployee,
+          isPhotoUpdated: undefined, // Reset photo flag
+        },
         organizationSettings: null,
       });
       console.log('✅ State reset - redirecting to login page');
@@ -679,6 +757,7 @@ export const useHRMSStore = create<HRMSState>((set, get) => ({
                 adminId: adminId, // Use admin_id or fallback to user_id
                 siteId: siteId, // Site ID from session info for attendance API calls
                 assignedProject: assignedProject, // Save first assigned project if available
+                isPhotoUpdated: userData.is_photo_updated ?? get().employee.isPhotoUpdated ?? true, // Store flag, default to true
               }
             });
             
@@ -688,7 +767,8 @@ export const useHRMSStore = create<HRMSState>((set, get) => ({
               hasAssignedProject: !!savedEmployee.assignedProject,
               projectId: savedEmployee.assignedProject?.project_id,
               projectName: savedEmployee.assignedProject?.project_name,
-              siteId: savedEmployee.siteId
+              siteId: savedEmployee.siteId,
+              isPhotoUpdated: savedEmployee.isPhotoUpdated
             });
             
             // Log if adminId was missing and we used fallback
@@ -700,6 +780,28 @@ export const useHRMSStore = create<HRMSState>((set, get) => ({
               });
             } else {
               console.log('✅ adminId set from session info (checkAuth):', adminId);
+            }
+            
+            // Check if is_photo_updated is false - then capture selfie immediately
+            // Only open camera if flag is explicitly false AND not already updated in state
+            if (userData.is_photo_updated === false) {
+              const currentState = get();
+              // Double check: only open if flag is still false in state
+              if (currentState.employee.isPhotoUpdated === false) {
+                console.log('📸 is_photo_updated is false (checkAuth) - opening camera immediately for selfie');
+                // Trigger profile photo capture immediately after auth check
+                setTimeout(async () => {
+                  try {
+                    await get().captureAndUploadProfilePhoto();
+                  } catch (error) {
+                    console.error('❌ Error capturing profile photo after checkAuth:', error);
+                  }
+                }, 300); // Minimal delay to ensure navigation starts
+              } else {
+                console.log('✅ Photo already updated (checkAuth), skipping camera');
+              }
+            } else {
+              console.log('✅ is_photo_updated is true or undefined (checkAuth), skipping camera');
             }
           } else {
             console.warn('⚠️ Session info response missing success or data (checkAuth):', sessionInfo);
@@ -2007,18 +2109,57 @@ export const useHRMSStore = create<HRMSState>((set, get) => ({
         
         // Step 2: Toggle is_photo_updated to ON (true) after successful upload
         // This ensures user won't be asked for selfie again on next login
+        // IMPORTANT: Always call this API after successful photo upload
         try {
-          console.log('🔄 Toggling is_photo_updated to true after successful upload...');
+          console.log('🔄 Calling toggleIsPhotoUpdated API to set is_photo_updated = true...');
+          console.log('📋 UserId for toggle API:', userId);
+          
           const toggleResponse = await apiService.toggleIsPhotoUpdated(userId);
           
-          if (toggleResponse.status === 200 && toggleResponse.data?.is_photo_updated === true) {
-            console.log('✅ Is photo updated successfully set to true:', toggleResponse.data);
+          console.log('📋 Toggle API Response:', {
+            status: toggleResponse.status,
+            message: toggleResponse.message,
+            data: toggleResponse.data,
+            fullResponse: toggleResponse
+          });
+          
+          // Update employee state flag to true regardless of response format
+          // This prevents camera from opening again
+          set((state) => ({
+            employee: {
+              ...state.employee,
+              isPhotoUpdated: true,
+            }
+          }));
+          
+          if (toggleResponse.status === 200) {
+            console.log('✅ Is photo updated API call successful - flag set to true');
+            if (toggleResponse.data?.is_photo_updated === true) {
+              console.log('✅ Backend confirmed is_photo_updated = true');
+            } else {
+              console.log('⚠️ Backend response format unexpected, but state updated locally');
+            }
           } else {
-            console.warn('⚠️ Is photo updated toggle response unexpected:', toggleResponse);
+            console.warn('⚠️ Toggle API returned non-200 status:', toggleResponse.status);
+            console.log('✅ State still updated locally to prevent repeated prompts');
           }
-        } catch (toggleError) {
-          console.error('❌ Failed to toggle is photo updated:', toggleError);
-          // Don't fail the whole operation if toggle fails, but log the error
+        } catch (toggleError: any) {
+          console.error('❌ Error calling toggleIsPhotoUpdated API:', toggleError);
+          console.error('❌ Error details:', {
+            message: toggleError?.message,
+            responseData: toggleError?.responseData,
+            status: toggleError?.responseData?.status
+          });
+          
+          // CRITICAL: Still update state to prevent repeated camera prompts
+          // Even if API fails, we don't want to ask for photo again
+          set((state) => ({
+            employee: {
+              ...state.employee,
+              isPhotoUpdated: true,
+            }
+          }));
+          console.log('✅ State updated to true despite API error - camera will not open again');
         }
         
         return { success: true };

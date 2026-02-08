@@ -3,6 +3,7 @@ import { createNativeStackNavigator } from "@react-navigation/native-stack";
 import ProfileScreen from "@/screens/ProfileScreen";
 import SettingsScreen from "@/screens/SettingsScreen";
 import ChangePasswordScreen from "@/screens/ChangePasswordScreen";
+import { ProfessionalHeader } from "@/components/ProfessionalHeader";
 import { useTheme } from "@/hooks/useTheme";
 import { getCommonScreenOptions } from "@/navigation/screenOptions";
 
@@ -23,21 +24,21 @@ export default function ProfileStackNavigator() {
         name="Profile"
         component={ProfileScreen}
         options={{
-          title: "My Profile",
+          header: () => <ProfessionalHeader title="My Profile" showBackButton={false} />,
         }}
       />
       <Stack.Screen
         name="Settings"
         component={SettingsScreen}
         options={{
-          title: "Settings",
+          header: () => <ProfessionalHeader title="Settings" />,
         }}
       />
       <Stack.Screen
         name="ChangePassword"
         component={ChangePasswordScreen}
         options={{
-          title: "Change Password",
+          header: () => <ProfessionalHeader title="Change Password" />,
         }}
       />
     </Stack.Navigator>

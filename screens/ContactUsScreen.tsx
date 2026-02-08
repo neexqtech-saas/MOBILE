@@ -72,13 +72,13 @@ export default function ContactUsScreen() {
               styles.contactCard,
               {
                 backgroundColor: "#FFFFFF",
-                borderColor: "#FFE0CC",
+                borderColor: "#DBEAFE",
                 opacity: pressed ? 0.8 : 1,
               },
             ]}
           >
-            <View style={[styles.iconContainer, { backgroundColor: "#FFE8CC" }]}>
-              <Feather name={method.icon} size={24} color="#FFB380" />
+            <View style={[styles.iconContainer, { backgroundColor: "#EFF6FF" }]}>
+              <Feather name={method.icon} size={24} color="#2563EB" />
             </View>
             <View style={styles.contactInfo}>
               <ThemedText style={styles.contactTitle}>{method.title}</ThemedText>

@@ -438,8 +438,8 @@ export default function MaterialReturnFormScreen() {
             <LinearGradient
               colors={
                 isSubmitting
-                  ? ["#CC6600", "#E67300", "#CC6600"]
-                  : ["#FFB380", "#FFCC99", "#FFB380"]
+                  ? ["#1D4ED8", "#2563EB", "#1D4ED8"]
+                  : ["#2563EB", "#93C5FD", "#2563EB"]
               }
               start={{ x: 0, y: 0 }}
               end={{ x: 1, y: 0 }}

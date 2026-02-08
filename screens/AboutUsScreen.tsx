@@ -32,8 +32,8 @@ export default function AboutUsScreen() {
 
         <Spacer height={Spacing["2xl"]} />
 
-        <View style={[styles.infoCard, { backgroundColor: "#FFFFFF", borderColor: "#FFE0CC" }]}>
-          <Feather name="info" size={24} color="#FFB380" />
+        <View style={[styles.infoCard, { backgroundColor: "#FFFFFF", borderColor: "#DBEAFE" }]}>
+          <Feather name="info" size={24} color="#2563EB" />
           <View style={styles.infoContent}>
             <ThemedText style={styles.infoTitle}>App Version</ThemedText>
             <ThemedText style={[styles.infoValue, { color: theme.textMuted }]}>
@@ -44,8 +44,8 @@ export default function AboutUsScreen() {
 
         <Spacer height={Spacing.lg} />
 
-        <View style={[styles.infoCard, { backgroundColor: "#FFFFFF", borderColor: "#FFE0CC" }]}>
-          <Feather name="shield" size={24} color="#FFB380" />
+        <View style={[styles.infoCard, { backgroundColor: "#FFFFFF", borderColor: "#DBEAFE" }]}>
+          <Feather name="shield" size={24} color="#2563EB" />
           <View style={styles.infoContent}>
             <ThemedText style={styles.infoTitle}>Privacy & Security</ThemedText>
             <ThemedText style={[styles.infoValue, { color: theme.textMuted }]}>
@@ -63,7 +63,7 @@ export default function AboutUsScreen() {
             }}
             style={styles.linkButton}
           >
-            <ThemedText style={[styles.linkText, { color: "#FFB380" }]}>
+            <ThemedText style={[styles.linkText, { color: "#2563EB" }]}>
               Terms of Service
             </ThemedText>
           </Pressable>
@@ -74,7 +74,7 @@ export default function AboutUsScreen() {
             }}
             style={styles.linkButton}
           >
-            <ThemedText style={[styles.linkText, { color: "#FFB380" }]}>
+            <ThemedText style={[styles.linkText, { color: "#2563EB" }]}>
               Privacy Policy
             </ThemedText>
           </Pressable>
@@ -103,13 +103,13 @@ const styles = StyleSheet.create({
     backgroundColor: "#FFFFFF",
     alignItems: "center",
     justifyContent: "center",
-    shadowColor: "#FFE0CC",
+    shadowColor: "#DBEAFE",
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.15,
     shadowRadius: 10,
     elevation: 5,
     borderWidth: 2,
-    borderColor: "#FFE8CC",
+    borderColor: "#EFF6FF",
     padding: Spacing.md,
     overflow: "hidden",
   },

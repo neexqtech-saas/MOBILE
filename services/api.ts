@@ -1,54 +1,29 @@
-// API Configuration and Service
+// Backend URL - .env mein sirf EXPO_PUBLIC_BACKEND_URL (sab jagah yahi)
 import { Platform } from 'react-native';
 import Constants from 'expo-constants';
 
-// Get the appropriate API URL based on platform
-// IMPORTANT: For Expo Go on physical devices, update YOUR_COMPUTER_IP with your actual IP address
-// Find your IP: Windows (ipconfig) or Mac/Linux (ifconfig)
-// Make sure your phone and computer are on the same WiFi network
-const YOUR_COMPUTER_IP = '192.168.10.41'; // UPDATE THIS with your computer's IP address
+const getBackendUrl = (): string => {
+  // Sab jagah sirf EXPO_PUBLIC_BACKEND_URL - dev + production dono
+  const envUrl = process.env.EXPO_PUBLIC_BACKEND_URL || 'http://127.0.0.1:8000';
 
-const getApiBaseUrl = () => {
   if (!__DEV__) {
-    return 'https://your-production-api.com'; // Production - Update this
+    return envUrl; // Production bhi .env se
   }
 
-  // Check if running in Expo Go (physical device)
-  const isExpoGo = Constants.appOwnership === 'expo';
-  const isWeb = Platform.OS === 'web';
-  
-  // For Expo Go on physical devices, always use computer's IP address
-  // Make sure your phone and computer are on the same WiFi network
-  if (isExpoGo && !isWeb) {
-    const url = `http://${YOUR_COMPUTER_IP}:8000`;
-    console.log('🔗 Using API URL for Expo Go (Physical Device):', url);
-    console.log('📱 Platform:', Platform.OS);
-    console.log('🔧 App Ownership:', Constants.appOwnership);
-    console.log('💡 Make sure backend is running: python manage.py runserver 0.0.0.0:8000');
-    return url;
-  }
-  
-  // For emulators/simulators/web
   if (Platform.OS === 'android') {
-    const url = 'http://10.0.2.2:8000'; // Android emulator
-    console.log('🔗 Using API URL for Android emulator:', url);
-    return url;
-  } else if (Platform.OS === 'ios') {
-    const url = 'http://localhost:8000'; // iOS simulator
-    console.log('🔗 Using API URL for iOS simulator:', url);
-    return url;
-  } else {
-    // Web platform
-    const url = 'http://localhost:8000';
-    console.log('🔗 Using API URL for web:', url);
+    const url = envUrl.replace(/127\.0\.0\.1|localhost/gi, '10.0.2.2');
+    console.log('🔗 Backend URL (Android emulator):', url);
     return url;
   }
+
+  console.log('🔗 Backend URL:', envUrl);
+  return envUrl;
 };
 
-const API_BASE_URL = getApiBaseUrl();
+/** Backend URL - .env se EXPO_PUBLIC_BACKEND_URL */
+export const BACKEND_URL = getBackendUrl();
 
-// Log the API URL being used (helpful for debugging)
-console.log('🚀 API Base URL:', API_BASE_URL);
+console.log('🚀 Backend URL:', BACKEND_URL);
 console.log('📱 Platform:', Platform.OS);
 console.log('🔧 App Ownership:', Constants.appOwnership);
 console.log('🌐 Network Info:', {
@@ -421,13 +396,13 @@ class ApiService {
           console.error('   1. Check backend server is running: python manage.py runserver 0.0.0.0:8000');
           console.error('   2. Verify phone and computer are on same WiFi network');
           console.error('   3. Check firewall allows port 8000');
-          console.error('   4. Verify IP address is correct:', YOUR_COMPUTER_IP);
-          console.error('   5. Test URL in browser: http://' + YOUR_COMPUTER_IP + ':8000' + endpoint);
+          console.error('   4. Verify backend is running: python manage.py runserver 0.0.0.0:8000');
+          console.error('   5. Test URL in browser:', BACKEND_URL + endpoint);
           console.error('   6. Current API URL:', url);
           console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
           console.log('');
           
-          const detailedError = `Network Error: Cannot connect to server at ${YOUR_COMPUTER_IP}:8000\n\nPlease check:\n1. Backend server is running (python manage.py runserver 0.0.0.0:8000)\n2. Phone and computer are on same WiFi\n3. IP address is correct: ${YOUR_COMPUTER_IP}\n4. Firewall allows port 8000`;
+          const detailedError = `Network Error: Cannot connect to server at ${BACKEND_URL}\n\nPlease check:\n1. Backend server is running (python manage.py runserver 0.0.0.0:8000)\n2. For physical devices: Ensure device and computer are on same network\n3. Firewall allows port 8000\n4. .env mein EXPO_PUBLIC_BACKEND_URL sahi set hai?`;
           throw new Error(detailedError);
         }
         console.error('❌ Error Type: Other Error');
@@ -712,7 +687,7 @@ class ApiService {
     reason: string,
     leaveDayType: "full_day" | "first_half" | "second_half" = "full_day"
   ): Promise<LeaveApplicationAPIResponse> {
-    const url = `/api/leave-applications/${siteId}/${userId}`;
+    const url = `/api/leave-applications/${siteId}/${userId}/`;
     const body = {
       leave_type: leaveTypeId,
       from_date: fromDate,
@@ -737,7 +712,7 @@ class ApiService {
     userId: string,
     year?: number
   ): Promise<LeaveApplicationsListAPIResponse> {
-    let url = `/api/leave-applications/${siteId}/${userId}`;
+    let url = `/api/leave-applications/${siteId}/${userId}/`;
     if (year) {
       url += `?year=${year}`;
     }
@@ -774,7 +749,7 @@ class ApiService {
     status: 'pending' | 'in-progress' | 'completed',
     comment?: string
   ): Promise<TaskUpdateAPIResponse> {
-    const url = `/api/task/employee/update-task-status/${siteId}/${taskId}`;
+    const url = `/api/task/employee/update-task-status/${siteId}/${taskId}/`;
     // Convert app format (in-progress) to API format (in_progress)
     const apiStatus = status === 'in-progress' ? 'in_progress' : status;
     const body: { status: string; comment?: string } = {
@@ -1341,6 +1316,30 @@ class ApiService {
     return response;
   }
 
+  // Update FCM Token for Employee
+  async updateFcmToken(
+    userId: string,
+    fcmToken: string
+  ): Promise<{ status: number; message: string; data?: { user_id: string; fcm_token: string } }> {
+    const url = `/api/fcm-token/${userId}`;
+    console.log('📱 Updating FCM token for userId:', userId);
+    
+    const body = {
+      fcm_token: fcmToken,
+    };
+    
+    const response = await this.request<{ status: number; message: string; data?: { user_id: string; fcm_token: string } }>(
+      url,
+      {
+        method: 'POST',
+        body: JSON.stringify(body),
+      },
+      true
+    );
+    console.log('📱 FCM token update response:', response);
+    return response;
+  }
+
   // ==================== EXPENSE APIs ====================
 
   // Get Expense Categories
@@ -1382,7 +1381,7 @@ class ApiService {
       description?: string;
     }
   ): Promise<{ status: number; message: string; data?: any }> {
-    const url = `/api/expenses/${siteId}/${userId}`;
+    const url = `/api/expenses/${siteId}/${userId}/`;
     console.log('📤 Creating expense for userId:', userId);
     const response = await this.request<{ status: number; message: string; data?: any }>(
       url,
@@ -1401,7 +1400,7 @@ class ApiService {
     siteId: string,
     userId: string
   ): Promise<{ status: number; message: string; data?: ExpenseAPI[] }> {
-    const url = `/api/expenses/${siteId}/${userId}`;
+    const url = `/api/expenses/${siteId}/${userId}/`;
     console.log('🔍 Fetching expenses for userId:', userId);
     const response = await this.request<{ status: number; message: string; data?: ExpenseAPI[] }>(
       url,
@@ -1419,7 +1418,7 @@ class ApiService {
     siteId: string,
     userId: string
   ): Promise<{ status: number; message: string; data?: VisitListResponse }> {
-    const url = `/api/visit/visit-list-create-by-user/${siteId}/${userId}`;
+    const url = `/api/visit/visit-list-create-by-user/${siteId}/${userId}/`;
     console.log('🔍 Fetching visits for userId:', userId);
     const response = await this.request<{ status: number; message: string; data?: VisitListResponse }>(
       url,
@@ -1438,7 +1437,7 @@ class ApiService {
       title: string;
       description?: string;
       schedule_date: string;
-      schedule_time: string;
+      schedule_time?: string;
       client_name: string;
       location_name?: string;
       address: string;
@@ -1449,9 +1448,12 @@ class ApiService {
       contact_person: string;
       contact_phone: string;
       contact_email?: string;
+      latitude?: number;
+      longitude?: number;
+      check_in_note?: string;
     }
   ): Promise<{ status: number; message: string; data?: VisitAPI }> {
-    const url = `/api/visit/visit-list-create-by-user/${siteId}/${userId}`;
+    const url = `/api/visit/visit-list-create-by-user/${siteId}/${userId}/`;
     console.log('📤 Creating visit for userId:', userId);
     const response = await this.request<{ status: number; message: string; data?: VisitAPI }>(
       url,
@@ -1476,7 +1478,7 @@ class ApiService {
       note?: string;
     }
   ): Promise<{ status: number; message: string; data?: any }> {
-    const url = `/api/visit/visit-check-in/${siteId}/${userId}/${visitId}`;
+    const url = `/api/visit/visit-check-in/${siteId}/${userId}/${visitId}/`;
     console.log('📍 Visit check-in for visitId:', visitId);
     const response = await this.request<{ status: number; message: string; data?: any }>(
       url,
@@ -1501,7 +1503,7 @@ class ApiService {
       note?: string;
     }
   ): Promise<{ status: number; message: string; data?: any }> {
-    const url = `/api/visit/visit-check-out/${siteId}/${userId}/${visitId}`;
+    const url = `/api/visit/visit-check-out/${siteId}/${userId}/${visitId}/`;
     console.log('📍 Visit check-out for visitId:', visitId);
     const response = await this.request<{ status: number; message: string; data?: any }>(
       url,
@@ -1938,5 +1940,5 @@ export interface OrganizationSettings {
   updated_at: string;
 }
 
-export const apiService = new ApiService(API_BASE_URL);
+export const apiService = new ApiService(BACKEND_URL);
 

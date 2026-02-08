@@ -47,6 +47,19 @@ export default function ApplyLeaveScreen() {
   
   // Calendar state
   const [calendarMonth, setCalendarMonth] = useState(new Date());
+  
+  // Ensure only one calendar opens at a time
+  const openFromDatePicker = () => {
+    setShowToDatePicker(false); // Close to date picker if open
+    setCalendarMonth(fromDate ? new Date(fromDate) : new Date());
+    setShowFromDatePicker(true);
+  };
+  
+  const openToDatePicker = () => {
+    setShowFromDatePicker(false); // Close from date picker if open
+    setCalendarMonth(toDate ? new Date(toDate) : new Date());
+    setShowToDatePicker(true);
+  };
 
   // Format date to YYYY-MM-DD
   const formatDate = (date: Date): string => {
@@ -77,21 +90,34 @@ export default function ApplyLeaveScreen() {
     if (isFromDate) {
       setFromDate(dateStr);
       setShowFromDatePicker(false);
+      // If to date is before from date, clear it
+      if (toDate && new Date(toDate) < new Date(dateStr)) {
+        setToDate("");
+      }
     } else {
+      // Validate to date is after or equal to from date
+      if (fromDate && new Date(dateStr) < new Date(fromDate)) {
+        setError("To date must be after or equal to from date");
+        return;
+      }
       setToDate(dateStr);
       setShowToDatePicker(false);
     }
     setError("");
   };
 
-  // Handle date picker for web
-  const handleWebDateChange = (dateStr: string, isFromDate: boolean) => {
-    if (isFromDate) {
-      setFromDate(dateStr);
-    } else {
-      setToDate(dateStr);
+  // Format date for display
+  const formatDisplayDate = (dateStr: string): string => {
+    if (!dateStr) return "";
+    try {
+      const date = new Date(dateStr);
+      const day = String(date.getDate()).padStart(2, '0');
+      const month = String(date.getMonth() + 1).padStart(2, '0');
+      const year = date.getFullYear();
+      return `${day}/${month}/${year}`;
+    } catch {
+      return dateStr;
     }
-    setError("");
   };
 
   const handleSubmit = async () => {
@@ -156,16 +182,15 @@ export default function ApplyLeaveScreen() {
       setIsSubmitting(false);
 
       if (response.status === 201) {
-    Alert.alert(
-          "✅ Leave Applied Successfully!",
-          "Your leave request has been submitted successfully and is pending approval.",
-      [
-        {
-          text: "OK",
-          onPress: () => navigation.goBack(),
-        },
-      ]
-    );
+        // Navigate back immediately after successful submission
+        navigation.goBack();
+        // Show success alert after navigation
+        setTimeout(() => {
+          Alert.alert(
+            "✅ Leave Applied Successfully!",
+            "Your leave request has been submitted successfully and is pending approval."
+          );
+        }, 300);
       } else {
         setError(response.message || "Failed to submit leave request. Please try again.");
       }
@@ -260,38 +285,60 @@ export default function ApplyLeaveScreen() {
     }
 
     const dateStr = `${calendarMonth.getFullYear()}-${String(calendarMonth.getMonth() + 1).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+    const dateObj = new Date(dateStr);
     const isSelected = isFromDate ? fromDate === dateStr : toDate === dateStr;
     const isToday = 
       new Date().getDate() === day &&
       new Date().getMonth() === calendarMonth.getMonth() &&
       new Date().getFullYear() === calendarMonth.getFullYear();
+    
+    // Check if date is in range (for to date picker)
+    const isInRange = !isFromDate && fromDate && toDate === "" && 
+      new Date(dateStr) >= new Date(fromDate);
+    
+    // Check if date is disabled (past dates or invalid range)
+    const isPast = dateObj < new Date(new Date().setHours(0, 0, 0, 0));
+    const isDisabled = isPast || (!isFromDate && fromDate && new Date(dateStr) < new Date(fromDate));
 
     return (
       <Pressable
         key={day}
-        onPress={() => handleDateSelect(day, isFromDate)}
+        onPress={() => !isDisabled && handleDateSelect(day, isFromDate)}
+        disabled={isDisabled}
         style={({ pressed }) => [
           styles.calendarDay,
           {
-            backgroundColor: isSelected ? "#FFB380" : "transparent",
-            borderColor: isSelected ? "#FFB380" : "transparent",
-            borderWidth: isSelected ? 2 : 0,
+            backgroundColor: isSelected 
+              ? Colors.dark.primary 
+              : isInRange 
+                ? Colors.dark.primary + "20" 
+                : "transparent",
+            borderColor: isSelected 
+              ? Colors.dark.primary 
+              : isToday && !isSelected 
+                ? Colors.dark.primary 
+                : "transparent",
+            borderWidth: isSelected || (isToday && !isSelected) ? 2 : 0,
+            opacity: isDisabled ? 0.4 : 1,
           },
-          isToday && !isSelected && styles.todayBorder,
-          pressed && styles.calendarDayPressed,
+          pressed && !isDisabled && styles.calendarDayPressed,
         ]}
       >
         <ThemedText
           style={[
             styles.calendarDayText,
             {
-              color: isSelected ? "#FFFFFF" : theme.text,
+              color: isSelected 
+                ? "#FFFFFF" 
+                : isDisabled 
+                  ? theme.textMuted 
+                  : theme.text,
               fontWeight: isSelected || isToday ? "600" : "400",
             }
           ]}
         >
           {day}
-      </ThemedText>
+        </ThemedText>
       </Pressable>
     );
   };
@@ -318,7 +365,7 @@ export default function ApplyLeaveScreen() {
             onPress={() => navigateMonth(-1)}
             style={styles.monthNavButton}
           >
-            <Feather name="chevron-left" size={24} color="#FFB380" />
+            <Feather name="chevron-left" size={24} color="#2563EB" />
           </Pressable>
           <View style={styles.monthTitle}>
             <ThemedText style={styles.monthTitleText}>
@@ -329,7 +376,7 @@ export default function ApplyLeaveScreen() {
             onPress={() => navigateMonth(1)}
             style={styles.monthNavButton}
           >
-            <Feather name="chevron-right" size={24} color="#FFB380" />
+            <Feather name="chevron-right" size={24} color="#2563EB" />
           </Pressable>
         </View>
 
@@ -358,8 +405,8 @@ export default function ApplyLeaveScreen() {
         keyboardShouldPersistTaps="handled"
       >
         {/* Leave Type Display */}
-        <View style={[styles.leaveTypeCard, { backgroundColor: "#FFE8CC", borderColor: "#FFB380", borderWidth: 1.5 }]}>
-          <Feather name="calendar" size={24} color="#FFB380" />
+        <View style={[styles.leaveTypeCard, { backgroundColor: "#EFF6FF", borderColor: "#2563EB", borderWidth: 1.5 }]}>
+          <Feather name="calendar" size={24} color="#2563EB" />
           <View style={styles.leaveTypeInfo}>
             <ThemedText style={styles.leaveTypeLabel}>Leave Type</ThemedText>
             <ThemedText style={styles.leaveTypeValue}>{leaveTypeName}</ThemedText>
@@ -387,49 +434,33 @@ export default function ApplyLeaveScreen() {
               From Date
           </ThemedText>
             <Pressable
-              onPress={() => {
-                setCalendarMonth(fromDate ? new Date(fromDate) : new Date());
-                setShowFromDatePicker(true);
-              }}
-              style={styles.dateInputWrapper}
+              onPress={openFromDatePicker}
+              style={({ pressed }) => [
+                styles.dateInputWrapper,
+                pressed && styles.dateInputWrapperPressed,
+              ]}
             >
-            <Feather
-              name="calendar"
-              size={20}
-                color="#FFB380"
-              style={styles.inputIcon}
-            />
-              {Platform.OS === 'web' ? (
-                <input
-                  type="date"
-                  value={fromDate}
-                  onChange={(e) => handleWebDateChange(e.target.value, true)}
-                  style={{
-                    flex: 1,
-                    height: "100%",
-                    fontSize: Typography.body.fontSize,
-                    border: "none",
-                    outline: "none",
-                    backgroundColor: "transparent",
+              <Feather
+                name="calendar"
+                size={20}
+                color={Colors.dark.primary}
+                style={styles.inputIcon}
+              />
+              <TextInput
+                style={[
+                  styles.dateInput,
+                  {
+                    backgroundColor: "#FFFFFF",
                     color: theme.text,
-                  } as any}
-                />
-              ) : (
-            <TextInput
-              style={[
-                    styles.dateInput,
-                {
-                      backgroundColor: "#FFFFFF",
-                  color: theme.text,
-                      borderColor: "#FFE0CC",
-                    },
-                  ]}
-                  value={fromDate}
-                  placeholder="YYYY-MM-DD"
-                  placeholderTextColor={theme.textMuted}
-                  editable={false}
-                />
-              )}
+                    borderColor: "#DBEAFE",
+                  },
+                ]}
+                value={formatDisplayDate(fromDate)}
+                placeholder="Select from date"
+                placeholderTextColor={theme.textMuted}
+                editable={false}
+                pointerEvents="none"
+              />
             </Pressable>
           </View>
           <View style={styles.dateField}>
@@ -437,49 +468,33 @@ export default function ApplyLeaveScreen() {
               To Date
             </ThemedText>
             <Pressable
-              onPress={() => {
-                setCalendarMonth(toDate ? new Date(toDate) : new Date());
-                setShowToDatePicker(true);
-              }}
-              style={styles.dateInputWrapper}
+              onPress={openToDatePicker}
+              style={({ pressed }) => [
+                styles.dateInputWrapper,
+                pressed && styles.dateInputWrapperPressed,
+              ]}
             >
               <Feather
                 name="calendar"
                 size={20}
-                color="#FFB380"
+                color={Colors.dark.primary}
                 style={styles.inputIcon}
               />
-              {Platform.OS === 'web' ? (
-                <input
-                  type="date"
-                  value={toDate}
-                  onChange={(e) => handleWebDateChange(e.target.value, false)}
-                  style={{
-                    flex: 1,
-                    height: "100%",
-                    fontSize: Typography.body.fontSize,
-                    border: "none",
-                    outline: "none",
-                    backgroundColor: "transparent",
+              <TextInput
+                style={[
+                  styles.dateInput,
+                  {
+                    backgroundColor: "#FFFFFF",
                     color: theme.text,
-                  } as any}
-                />
-              ) : (
-                <TextInput
-                  style={[
-                    styles.dateInput,
-                    {
-                      backgroundColor: "#FFFFFF",
-                      color: theme.text,
-                      borderColor: "#FFE0CC",
-                    },
-                  ]}
-                  value={toDate}
-              placeholder="YYYY-MM-DD"
-              placeholderTextColor={theme.textMuted}
-                  editable={false}
-            />
-              )}
+                    borderColor: "#DBEAFE",
+                  },
+                ]}
+                value={formatDisplayDate(toDate)}
+                placeholder="Select to date"
+                placeholderTextColor={theme.textMuted}
+                editable={false}
+                pointerEvents="none"
+              />
             </Pressable>
           </View>
         </View>
@@ -500,8 +515,8 @@ export default function ApplyLeaveScreen() {
               style={[
                 styles.dayTypeOption,
                 {
-                  backgroundColor: leaveDayType === "full_day" ? "#FFE8CC" : "#FFFFFF",
-                  borderColor: leaveDayType === "full_day" ? "#FFB380" : "#FFE0CC",
+                  backgroundColor: leaveDayType === "full_day" ? "#EFF6FF" : "#FFFFFF",
+                  borderColor: leaveDayType === "full_day" ? "#2563EB" : "#DBEAFE",
                   borderWidth: leaveDayType === "full_day" ? 2 : 1.5,
                 },
               ]}
@@ -509,7 +524,7 @@ export default function ApplyLeaveScreen() {
             <Feather
                 name={leaveDayType === "full_day" ? "check-circle" : "circle"}
               size={20}
-                color={leaveDayType === "full_day" ? "#FFB380" : "#CCCCCC"}
+                color={leaveDayType === "full_day" ? "#2563EB" : "#CCCCCC"}
               />
               <ThemedText
                 style={[
@@ -531,8 +546,8 @@ export default function ApplyLeaveScreen() {
               style={[
                 styles.dayTypeOption,
                 {
-                  backgroundColor: leaveDayType === "first_half" ? "#FFE8CC" : "#FFFFFF",
-                  borderColor: leaveDayType === "first_half" ? "#FFB380" : "#FFE0CC",
+                  backgroundColor: leaveDayType === "first_half" ? "#EFF6FF" : "#FFFFFF",
+                  borderColor: leaveDayType === "first_half" ? "#2563EB" : "#DBEAFE",
                   borderWidth: leaveDayType === "first_half" ? 2 : 1.5,
                 },
               ]}
@@ -540,7 +555,7 @@ export default function ApplyLeaveScreen() {
               <Feather
                 name={leaveDayType === "first_half" ? "check-circle" : "circle"}
                 size={20}
-                color={leaveDayType === "first_half" ? "#FFB380" : "#CCCCCC"}
+                color={leaveDayType === "first_half" ? "#2563EB" : "#CCCCCC"}
               />
               <ThemedText
                 style={[
@@ -562,8 +577,8 @@ export default function ApplyLeaveScreen() {
               style={[
                 styles.dayTypeOption,
                 {
-                  backgroundColor: leaveDayType === "second_half" ? "#FFE8CC" : "#FFFFFF",
-                  borderColor: leaveDayType === "second_half" ? "#FFB380" : "#FFE0CC",
+                  backgroundColor: leaveDayType === "second_half" ? "#EFF6FF" : "#FFFFFF",
+                  borderColor: leaveDayType === "second_half" ? "#2563EB" : "#DBEAFE",
                   borderWidth: leaveDayType === "second_half" ? 2 : 1.5,
                 },
               ]}
@@ -571,7 +586,7 @@ export default function ApplyLeaveScreen() {
               <Feather
                 name={leaveDayType === "second_half" ? "check-circle" : "circle"}
                 size={20}
-                color={leaveDayType === "second_half" ? "#FFB380" : "#CCCCCC"}
+                color={leaveDayType === "second_half" ? "#2563EB" : "#CCCCCC"}
               />
               <ThemedText
                 style={[
@@ -600,7 +615,7 @@ export default function ApplyLeaveScreen() {
             {
                 backgroundColor: "#FFFFFF",
               color: theme.text,
-                borderColor: "#FFE0CC",
+                borderColor: "#DBEAFE",
             },
           ]}
           value={reason}
@@ -630,8 +645,8 @@ export default function ApplyLeaveScreen() {
             <LinearGradient
               colors={
                 pressed || isSubmitting
-                  ? ["#CC6600", "#E67300", "#CC6600"]
-                  : ["#FFB380", "#FFCC99", "#FFB380"]
+                  ? ["#1D4ED8", "#2563EB", "#1D4ED8"]
+                  : ["#2563EB", "#93C5FD", "#2563EB"]
               }
               start={{ x: 0, y: 0 }}
               end={{ x: 1, y: 0 }}
@@ -656,19 +671,37 @@ export default function ApplyLeaveScreen() {
         animationType="slide"
         onRequestClose={() => setShowFromDatePicker(false)}
       >
-        <View style={styles.modalOverlay}>
-          <View style={[styles.modalContent, { backgroundColor: "#FFFFFF" }]}>
+        <Pressable 
+          style={styles.modalOverlay}
+          onPress={() => setShowFromDatePicker(false)}
+        >
+          <Pressable 
+            style={[styles.modalContent, { backgroundColor: theme.backgroundDefault || "#FFFFFF" }]}
+            onPress={(e) => e.stopPropagation()}
+          >
             <View style={styles.modalHeader}>
-              <ThemedText type="h4" style={{ color: "#424242" }}>Select From Date</ThemedText>
-              <Pressable onPress={() => setShowFromDatePicker(false)}>
-                <Feather name="x" size={24} color="#424242" />
+              <View style={styles.modalHeaderLeft}>
+                <Feather name="calendar" size={24} color={Colors.dark.primary} />
+                <ThemedText type="h4" style={[styles.modalTitle, { color: theme.text || "#424242" }]}>
+                  Select From Date
+                </ThemedText>
+              </View>
+              <Pressable 
+                onPress={() => setShowFromDatePicker(false)}
+                style={styles.closeButton}
+              >
+                <Feather name="x" size={24} color={theme.textMuted || "#757575"} />
               </Pressable>
             </View>
-            <ScrollView style={styles.modalBody} showsVerticalScrollIndicator={false}>
+            <ScrollView 
+              style={styles.modalBody} 
+              showsVerticalScrollIndicator={false}
+              contentContainerStyle={styles.modalBodyContent}
+            >
               {renderCalendar(true)}
             </ScrollView>
-          </View>
-        </View>
+          </Pressable>
+        </Pressable>
       </Modal>
 
       {/* Calendar Picker Modal - To Date */}
@@ -678,19 +711,37 @@ export default function ApplyLeaveScreen() {
         animationType="slide"
         onRequestClose={() => setShowToDatePicker(false)}
       >
-        <View style={styles.modalOverlay}>
-          <View style={[styles.modalContent, { backgroundColor: "#FFFFFF" }]}>
+        <Pressable 
+          style={styles.modalOverlay}
+          onPress={() => setShowToDatePicker(false)}
+        >
+          <Pressable 
+            style={[styles.modalContent, { backgroundColor: theme.backgroundDefault || "#FFFFFF" }]}
+            onPress={(e) => e.stopPropagation()}
+          >
             <View style={styles.modalHeader}>
-              <ThemedText type="h4" style={{ color: "#424242" }}>Select To Date</ThemedText>
-              <Pressable onPress={() => setShowToDatePicker(false)}>
-                <Feather name="x" size={24} color="#424242" />
+              <View style={styles.modalHeaderLeft}>
+                <Feather name="calendar" size={24} color={Colors.dark.primary} />
+                <ThemedText type="h4" style={[styles.modalTitle, { color: theme.text || "#424242" }]}>
+                  Select To Date
+                </ThemedText>
+              </View>
+              <Pressable 
+                onPress={() => setShowToDatePicker(false)}
+                style={styles.closeButton}
+              >
+                <Feather name="x" size={24} color={theme.textMuted || "#757575"} />
               </Pressable>
             </View>
-            <ScrollView style={styles.modalBody} showsVerticalScrollIndicator={false}>
+            <ScrollView 
+              style={styles.modalBody} 
+              showsVerticalScrollIndicator={false}
+              contentContainerStyle={styles.modalBodyContent}
+            >
               {renderCalendar(false)}
             </ScrollView>
-          </View>
-        </View>
+          </Pressable>
+        </Pressable>
       </Modal>
     </>
   );
@@ -746,9 +797,18 @@ const styles = StyleSheet.create({
   dateRow: {
     flexDirection: "row",
     gap: Spacing.md,
+    ...Platform.select({
+      web: {
+        flexWrap: "wrap",
+      },
+    }),
   },
   dateField: {
     flex: 1,
+    minWidth: Platform.select({
+      web: 200,
+      default: undefined,
+    }),
   },
   inputContainer: {
     width: "100%",
@@ -758,12 +818,27 @@ const styles = StyleSheet.create({
     height: Spacing.inputHeight,
     borderWidth: 1.5,
     borderRadius: BorderRadius.lg,
-    borderColor: "#FFE0CC",
+    borderColor: "#DBEAFE",
     backgroundColor: "#FFFFFF",
     flexDirection: "row",
     alignItems: "center",
     paddingLeft: Spacing["4xl"] + Spacing.sm,
     paddingRight: Spacing.lg,
+    ...Platform.select({
+      ios: {
+        shadowColor: "#000",
+        shadowOffset: { width: 0, height: 1 },
+        shadowOpacity: 0.05,
+        shadowRadius: 2,
+      },
+      android: {
+        elevation: 1,
+      },
+    }),
+  },
+  dateInputWrapperPressed: {
+    opacity: 0.8,
+    borderColor: Colors.dark.primary,
   },
   inputIcon: {
     position: "absolute",
@@ -803,7 +878,7 @@ const styles = StyleSheet.create({
   submitButtonContainer: {
     borderRadius: BorderRadius.lg,
     overflow: "hidden",
-    shadowColor: "#FFB380",
+    shadowColor: "#2563EB",
     shadowOffset: { width: 0, height: 3 },
     shadowOpacity: 0.2,
     shadowRadius: 8,
@@ -828,8 +903,19 @@ const styles = StyleSheet.create({
   modalContent: {
     borderTopLeftRadius: BorderRadius.xl,
     borderTopRightRadius: BorderRadius.xl,
-    maxHeight: "80%",
+    maxHeight: "85%",
     paddingBottom: Spacing.xl,
+    ...Platform.select({
+      ios: {
+        shadowColor: "#000",
+        shadowOffset: { width: 0, height: -2 },
+        shadowOpacity: 0.1,
+        shadowRadius: 8,
+      },
+      android: {
+        elevation: 8,
+      },
+    }),
   },
   modalHeader: {
     flexDirection: "row",
@@ -837,13 +923,32 @@ const styles = StyleSheet.create({
     alignItems: "center",
     padding: Spacing.lg,
     borderBottomWidth: 1,
-    borderBottomColor: "#FFE0CC",
+    borderBottomColor: "#E2E8F0",
+  },
+  modalHeaderLeft: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: Spacing.md,
+    flex: 1,
+  },
+  modalTitle: {
+    fontSize: 18,
+    fontWeight: "700",
+  },
+  closeButton: {
+    padding: Spacing.xs,
+    borderRadius: BorderRadius.md,
   },
   modalBody: {
+    flex: 1,
+  },
+  modalBodyContent: {
     padding: Spacing.lg,
+    paddingBottom: Spacing.xl,
   },
   calendarContainer: {
     paddingVertical: Spacing.md,
+    width: "100%",
   },
   calendarHeader: {
     flexDirection: "row",
@@ -854,6 +959,10 @@ const styles = StyleSheet.create({
   },
   monthNavButton: {
     padding: Spacing.sm,
+    borderRadius: BorderRadius.md,
+    minWidth: 40,
+    alignItems: "center",
+    justifyContent: "center",
   },
   monthTitle: {
     flex: 1,
@@ -861,12 +970,13 @@ const styles = StyleSheet.create({
   },
   monthTitleText: {
     fontSize: 18,
-    fontWeight: "600",
+    fontWeight: "700",
     color: "#424242",
   },
   weekdayRow: {
     flexDirection: "row",
-    marginBottom: Spacing.sm,
+    marginBottom: Spacing.md,
+    paddingHorizontal: Spacing.xs,
   },
   weekdayHeader: {
     flex: 1,
@@ -874,29 +984,41 @@ const styles = StyleSheet.create({
     paddingVertical: Spacing.sm,
   },
   weekdayText: {
-    fontSize: 12,
-    fontWeight: "600",
+    fontSize: 13,
+    fontWeight: "700",
     color: "#757575",
+    textTransform: "uppercase",
+    letterSpacing: 0.5,
   },
   calendarGrid: {
     flexDirection: "row",
     flexWrap: "wrap",
-    gap: Spacing.xs,
+    paddingHorizontal: Spacing.xs,
+    justifyContent: "space-between",
   },
   calendarDay: {
-    width: "13%",
+    width: "13.5%",
     aspectRatio: 1,
     alignItems: "center",
     justifyContent: "center",
     borderRadius: BorderRadius.md,
     marginBottom: Spacing.xs,
+    minHeight: 40,
+    maxWidth: 50,
+    ...Platform.select({
+      web: {
+        minWidth: 40,
+        maxWidth: 50,
+      },
+    }),
   },
   calendarDayText: {
-    fontSize: 14,
+    fontSize: 15,
+    fontWeight: "500",
   },
   todayBorder: {
     borderWidth: 2,
-    borderColor: "#FFB380",
+    borderColor: Colors.dark.primary,
   },
   calendarDayPressed: {
     opacity: 0.7,

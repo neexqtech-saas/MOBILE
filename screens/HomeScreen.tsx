@@ -780,38 +780,80 @@ export default function HomeScreen() {
 
   // Filter shortcuts based on organization settings
   // Use enabled_menu_items from API response
+  // Show shortcuts by default if settings not loaded, only hide if explicitly false
   const enabledMenuItems = organizationSettings?.enabled_menu_items || {};
+  const hasSettings = !!organizationSettings;
   
   const allAttendanceShortcuts = [
-    { icon: "calendar" as const, label: "Attendance", onPress: () => navigation.navigate("AttendanceTab"), menuKey: "attendance" },
+    { icon: "calendar" as const, label: "Attendance", onPress: () => {
+      console.log('🔗 Navigating to AttendanceTab');
+      // Get parent tab navigator to navigate to tabs
+      const parent = navigation.getParent();
+      if (parent) {
+        parent.navigate("AttendanceTab");
+      } else {
+        // Fallback: try direct navigation
+        navigation.navigate("AttendanceTab");
+      }
+    }, menuKey: "attendance" },
     { icon: "sun" as const, label: "Holidays", onPress: () => navigation.navigate("Holidays"), menuKey: "holiday-calendar" },
-    { icon: "briefcase" as const, label: "Leave", onPress: () => navigation.navigate("LeaveTab"), menuKey: "application" },
+    { icon: "briefcase" as const, label: "Leave", onPress: () => {
+      console.log('🔗 Navigating to LeaveTab');
+      // Get parent tab navigator to navigate to tabs
+      const parent = navigation.getParent();
+      if (parent) {
+        parent.navigate("LeaveTab");
+      } else {
+        // Fallback: try direct navigation
+        navigation.navigate("LeaveTab");
+      }
+    }, menuKey: "application" },
   ];
 
   const allWorkspaceShortcuts = [
-    { icon: "check-square" as const, label: "Tasks", onPress: () => navigation.navigate("TaskTab"), menuKey: "tasks" },
-    { icon: "package" as const, label: "Production", onPress: () => navigation.navigate("ProductionTab"), menuKey: "production-management" },
-    { icon: "users" as const, label: "Meetings", onPress: () => {}, menuKey: "meeting_module_enabled" }, // Using module flag
+    { icon: "check-square" as const, label: "Tasks", onPress: () => {
+      console.log('🔗 Navigating to TaskTab');
+      // Get parent tab navigator to navigate to tabs
+      const parent = navigation.getParent();
+      if (parent) {
+        parent.navigate("TaskTab");
+      } else {
+        // Fallback: try direct navigation
+        navigation.navigate("TaskTab");
+      }
+    }, menuKey: "tasks" },
     { icon: "dollar-sign" as const, label: "Expenses", onPress: () => navigation.navigate("Expenses"), menuKey: "expense" },
     { icon: "map-pin" as const, label: "Visits", onPress: () => navigation.navigate("Visits"), menuKey: "visit" },
   ];
 
-  // Filter shortcuts - only show if enabled_menu_items[key] is true
+  // Filter shortcuts - show by default, only hide if explicitly false
   const attendanceShortcuts = allAttendanceShortcuts.filter(shortcut => {
+    // If settings not loaded, show all shortcuts
+    if (!hasSettings) return true;
     const isEnabled = enabledMenuItems[shortcut.menuKey];
-    // Only show if explicitly true, hide if false or undefined
-    return isEnabled === true;
+    // Show if true or undefined, hide only if explicitly false
+    return isEnabled !== false;
   });
 
   const workspaceShortcuts = allWorkspaceShortcuts.filter(shortcut => {
-    // For meetings, check meeting_module_enabled from root level
-    if (shortcut.menuKey === "meeting_module_enabled") {
-      return organizationSettings?.meeting_module_enabled === true;
-    }
+    // If settings not loaded, show all shortcuts
+    if (!hasSettings) return true;
     const isEnabled = enabledMenuItems[shortcut.menuKey];
-    // Only show if explicitly true, hide if false or undefined
-    return isEnabled === true;
+    // Show if true or undefined, hide only if explicitly false
+    return isEnabled !== false;
   });
+
+  // Debug: Log shortcuts for troubleshooting
+  useEffect(() => {
+    console.log('📋 HomeScreen Shortcuts Debug:', {
+      hasSettings,
+      enabledMenuItems,
+      attendanceShortcutsCount: attendanceShortcuts.length,
+      workspaceShortcutsCount: workspaceShortcuts.length,
+      attendanceShortcuts: attendanceShortcuts.map(s => s.label),
+      workspaceShortcuts: workspaceShortcuts.map(s => s.label),
+    });
+  }, [hasSettings, enabledMenuItems, attendanceShortcuts.length, workspaceShortcuts.length]);
 
   const formatShortDate = (date: Date) => {
     const day = date.getDate();
@@ -826,25 +868,22 @@ export default function HomeScreen() {
   return (
     <View style={styles.container}>
     <ScreenScrollView>
-        {/* Welcome Section with Gradient Background */}
-      <LinearGradient
-        colors={["#FFFFFF", "#FFFBF8", "#FFFFFF"]}
-        start={{ x: 0, y: 0 }}
-        end={{ x: 1, y: 1 }}
-        style={styles.greetingSection}
-      >
+        {/* Professional Header Section */}
+      <View style={styles.greetingSection}>
           <View style={styles.greetingContent}>
             <View style={styles.welcomeHeader}>
-              <ThemedText type="h2" style={styles.welcomeText}>
-                Hello, {employee.name.split(" ")[0]}
-              </ThemedText>
-              <View style={styles.emojiContainer}>
-                <ThemedText style={styles.emojiText}>👋</ThemedText>
+              <View style={styles.welcomeTextContainer}>
+                <ThemedText type="small" style={styles.greetingText}>
+                  {getGreeting()}
+                </ThemedText>
+                <ThemedText type="h2" style={styles.welcomeText}>
+                  {employee.name.split(" ")[0]}
+                </ThemedText>
               </View>
             </View>
             <View style={styles.timeDateContainer}>
               <View style={styles.timeBadge}>
-                <Feather name="clock" size={13} color="#FF9800" />
+                <Feather name="clock" size={14} color="#2563EB" />
                 <ThemedText type="small" style={styles.timeText}>
                   {formatTime(currentTime)}
                 </ThemedText>
@@ -855,7 +894,12 @@ export default function HomeScreen() {
             </View>
           </View>
           <Pressable
-            onPress={handleRefreshAll}
+            onPress={() => {
+              if (!isRefreshing) {
+                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                handleRefreshAll();
+              }
+            }}
             disabled={isRefreshing}
             style={({ pressed }) => [
               styles.refreshButton,
@@ -866,25 +910,17 @@ export default function HomeScreen() {
             ]}
           >
             {isRefreshing ? (
-              <ActivityIndicator size="small" color="#FF9800" />
+              <ActivityIndicator size="small" color="#2563EB" />
             ) : (
-              <Feather name="refresh-cw" size={16} color="#FF9800" />
+              <Feather name="refresh-cw" size={18} color="#2563EB" />
             )}
           </Pressable>
-      </LinearGradient>
+      </View>
 
       <Spacer height={Spacing.xl} />
 
-        {/* Attendance Card with Premium Design */}
+        {/* Professional Attendance Card */}
         <View style={styles.attendanceCard}>
-          {/* Decorative Top Accent */}
-          <LinearGradient
-            colors={["#FF9800", "#FFB74D", "#FFCC80"]}
-            start={{ x: 0, y: 0 }}
-            end={{ x: 1, y: 0 }}
-            style={styles.cardAccent}
-          />
-          
           {/* Status Badge */}
           <View style={styles.statusBadgeContainer}>
             <View style={[styles.statusDot, { backgroundColor: status.color }]} />
@@ -894,17 +930,18 @@ export default function HomeScreen() {
           </View>
 
           <View style={styles.attendanceCardContent}>
-            {/* Date Oval */}
-            <View style={styles.dateOval}>
-              <ThemedText style={styles.dateOvalText}>{formatShortDate(currentTime)}</ThemedText>
+            {/* Date Display */}
+            <View style={styles.dateContainer}>
+              <ThemedText style={styles.dateLabel}>Today</ThemedText>
+              <ThemedText style={styles.dateValue}>{formatShortDate(currentTime)}</ThemedText>
             </View>
 
             {/* First In / Last Out */}
             <View style={styles.attendanceInfo}>
               <View style={styles.attendanceInfoItem}>
                 <View style={styles.infoLabelRow}>
-                  <Feather name="log-in" size={12} color="#5D4037" />
-                  <ThemedText style={styles.attendanceInfoLabel}>First In</ThemedText>
+                  <Feather name="log-in" size={14} color="#64748B" />
+                  <ThemedText style={styles.attendanceInfoLabel}>Check In</ThemedText>
                 </View>
                 <ThemedText style={styles.attendanceInfoValue}>
                   {todayAttendance?.checkIn || "-"}
@@ -912,8 +949,8 @@ export default function HomeScreen() {
               </View>
               <View style={styles.attendanceInfoItem}>
                 <View style={styles.infoLabelRow}>
-                  <Feather name="log-out" size={12} color="#5D4037" />
-                  <ThemedText style={styles.attendanceInfoLabel}>Last Out</ThemedText>
+                  <Feather name="log-out" size={14} color="#64748B" />
+                  <ThemedText style={styles.attendanceInfoLabel}>Check Out</ThemedText>
                 </View>
                 <ThemedText style={styles.attendanceInfoValue}>
                   {todayAttendance?.checkOut || "-"}
@@ -922,9 +959,14 @@ export default function HomeScreen() {
             </View>
           </View>
 
-          {/* Premium Check In Button */}
+          {/* Professional Check In Button */}
           <Pressable
-            onPress={handlePunch}
+            onPress={() => {
+              if (!isDisabled) {
+                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+                handlePunch();
+              }
+            }}
             disabled={isDisabled}
             onPressIn={() => {
               if (!isDisabled) {
@@ -939,33 +981,22 @@ export default function HomeScreen() {
             style={styles.checkInButtonContainer}
           >
             <Animated.View style={punchAnimStyle}>
-              <LinearGradient
-                colors={
-                  isDisabled
-                    ? ["#E0E0E0", "#F5F5F5"]
-                    : isPunchPressed
-                    ? ["#F57C00", "#FF9800", "#FFB74D"]
-                    : ["#FF9800", "#FFB74D", "#FFCC80"]
-                }
-                start={{ x: 0, y: 0 }}
-                end={{ x: 1, y: 1 }}
-                style={styles.checkInButton}
-              >
-                <View style={styles.buttonIconContainer}>
-                  <Feather name="camera" size={22} color={isDisabled ? "#9E9E9E" : "#FFFFFF"} />
-                </View>
-                <ThemedText style={[styles.checkInButtonText, { color: isDisabled ? "#9E9E9E" : "#FFFFFF" }]}>
+              <View style={[
+                styles.checkInButton,
+                isDisabled && styles.checkInButtonDisabled,
+                isPunchPressed && !isDisabled && styles.checkInButtonPressed
+              ]}>
+                <Feather name="camera" size={20} color={isDisabled ? "#94A3B8" : "#FFFFFF"} />
+                <ThemedText style={[styles.checkInButtonText, { color: isDisabled ? "#94A3B8" : "#FFFFFF" }]}>
                   {isPunching ? "Processing..." : shouldShowCheckIn ? "Check In" : "Check Out"}
                 </ThemedText>
-              </LinearGradient>
+              </View>
             </Animated.View>
           </Pressable>
             
-          {/* Duration with Icon Background */}
+          {/* Duration Row */}
           <View style={styles.durationRow}>
-            <View style={styles.durationIconContainer}>
-              <Feather name="clock" size={14} color="#FF9800" />
-            </View>
+            <Feather name="clock" size={16} color="#2563EB" />
             <ThemedText style={styles.durationText}>
               Duration: {todayAttendance?.totalHours ? formatTotalHours(todayAttendance.totalHours) : "-"}
             </ThemedText>
@@ -979,7 +1010,16 @@ export default function HomeScreen() {
           <View style={styles.errorContainer}>
             <Feather name="alert-circle" size={18} color="#F44336" />
             <ThemedText style={styles.errorText}>{punchError}</ThemedText>
-            <Pressable onPress={() => setPunchError(null)} style={styles.errorCloseButton}>
+            <Pressable 
+              onPress={() => {
+                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                setPunchError(null);
+              }} 
+              style={({ pressed }) => [
+                styles.errorCloseButton,
+                { opacity: pressed ? 0.7 : 1, transform: [{ scale: pressed ? 0.9 : 1 }] }
+              ]}
+            >
               <Feather name="x" size={16} color="#F44336" />
             </Pressable>
               </View>
@@ -987,45 +1027,35 @@ export default function HomeScreen() {
 
         {punchError ? <Spacer height={Spacing.lg} /> : null}
 
-        {/* Attendance Section with Premium Header */}
+        {/* Professional Attendance Section */}
         <View style={styles.sectionCard}>
           <View style={styles.sectionHeader}>
             <View style={styles.sectionTitleRow}>
-              <View style={styles.sectionIconContainer}>
-                <Feather name="calendar" size={18} color="#FF9800" />
-              </View>
+              <Feather name="calendar" size={20} color="#1E293B" />
               <ThemedText type="h4" style={styles.sectionTitle}>
                 Attendance
               </ThemedText>
             </View>
-            <View style={styles.sectionDivider} />
           </View>
           <View style={styles.shortcutsGrid}>
             {attendanceShortcuts.map((shortcut, index) => (
               <Pressable
                 key={index}
-                onPress={shortcut.onPress}
+                onPress={() => {
+                  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                  shortcut.onPress();
+                }}
                 style={({ pressed }) => [
                   styles.shortcutItem,
-                  { 
+                  pressed && styles.shortcutItemPressed,
+                  {
                     opacity: pressed ? 0.8 : 1,
-                    shadowColor: "#000",
-                    shadowOffset: { width: 0, height: 2 },
-                    shadowOpacity: 0.08,
-                    shadowRadius: 4,
-                    elevation: 2,
+                    transform: [{ scale: pressed ? 0.95 : 1 }],
                   },
                 ]}
               >
                 <View style={styles.shortcutIconContainer}>
-                  <LinearGradient
-                    colors={["#FFF8F0", "#FFE8CC", "#FFF8F0"]}
-                    start={{ x: 0, y: 0 }}
-                    end={{ x: 1, y: 1 }}
-                    style={styles.shortcutIconBackground}
-                  >
-                    <Feather name={shortcut.icon} size={20} color="#FF9800" />
-                  </LinearGradient>
+                  <Feather name={shortcut.icon} size={24} color="#2563EB" />
                 </View>
                 <ThemedText type="small" style={styles.shortcutLabel}>
                   {shortcut.label}
@@ -1037,18 +1067,15 @@ export default function HomeScreen() {
 
         <Spacer height={Spacing.xl} />
 
-        {/* My Workspace Section with Premium Header */}
+        {/* Professional Workspace Section */}
         <View style={styles.sectionCard}>
           <View style={styles.sectionHeader}>
             <View style={styles.sectionTitleRow}>
-              <View style={styles.sectionIconContainer}>
-                <Feather name="briefcase" size={18} color="#FF9800" />
-              </View>
+              <Feather name="briefcase" size={20} color="#1E293B" />
               <ThemedText type="h4" style={styles.sectionTitle}>
                 My Workspace
               </ThemedText>
             </View>
-            <View style={styles.sectionDivider} />
           </View>
           <View style={styles.shortcutsGrid}>
             {workspaceShortcuts.map((shortcut, index) => {
@@ -1063,37 +1090,23 @@ export default function HomeScreen() {
               return (
                 <Pressable
                   key={index}
-                  onPress={shortcut.onPress}
+                  onPress={() => {
+                    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                    shortcut.onPress();
+                  }}
                   style={({ pressed }) => [
                     styles.shortcutItem,
-                    { 
+                    pressed && styles.shortcutItemPressed,
+                    {
                       opacity: pressed ? 0.8 : 1,
-                      shadowColor: "#000",
-                      shadowOffset: { width: 0, height: 2 },
-                      shadowOpacity: 0.08,
-                      shadowRadius: 4,
-                      elevation: 2,
+                      transform: [{ scale: pressed ? 0.95 : 1 }],
                     },
                   ]}
                 >
                   <View style={styles.shortcutIconContainer}>
-                    <LinearGradient
-                      colors={["#FFF8F0", "#FFE8CC", "#FFF8F0"]}
-                      start={{ x: 0, y: 0 }}
-                      end={{ x: 1, y: 1 }}
-                      style={styles.shortcutIconBackground}
-                    >
-                      <Feather name={shortcut.icon} size={20} color="#FF9800" />
-                    </LinearGradient>
+                    <Feather name={shortcut.icon} size={24} color="#2563EB" />
                     {badgeCount > 0 && (
-                      <View style={[
-                        styles.badge,
-                        { 
-                          backgroundColor: Colors.dark.error,
-                          borderWidth: 2,
-                          borderColor: "#FFFFFF",
-                        }
-                      ]}>
+                      <View style={styles.badge}>
                         <ThemedText style={styles.badgeText}>
                           {badgeCount > 99 ? '99+' : badgeCount}
                         </ThemedText>
@@ -1118,116 +1131,94 @@ export default function HomeScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: "#F8F9FA",
+    backgroundColor: "#F8FAFC",
   },
   greetingSection: {
     paddingHorizontal: Spacing["2xl"],
-    paddingTop: Spacing.xl + 12,
+    paddingTop: Spacing.xl + 8,
     paddingBottom: Spacing.xl,
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "flex-start",
-    borderBottomWidth: 0,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.04,
-    shadowRadius: 8,
-    elevation: 2,
+    backgroundColor: "#FFFFFF",
+    borderBottomWidth: 1,
+    borderBottomColor: "#E2E8F0",
   },
   greetingContent: {
     flex: 1,
   },
   welcomeHeader: {
-    flexDirection: "row",
-    alignItems: "center",
     marginBottom: Spacing.md,
   },
+  welcomeTextContainer: {
+    marginBottom: Spacing.xs,
+  },
+  greetingText: {
+    fontSize: 14,
+    fontWeight: "500",
+    color: "#64748B",
+    marginBottom: 4,
+    textTransform: "uppercase",
+    letterSpacing: 0.5,
+  },
   welcomeText: {
-    fontSize: 32,
-    fontWeight: "800",
-    color: "#1A1A1A",
-    letterSpacing: -0.8,
-    lineHeight: 40,
-    marginRight: Spacing.sm,
-  },
-  emojiContainer: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: "#FFF8F0",
-    alignItems: "center",
-    justifyContent: "center",
-    borderWidth: 1.5,
-    borderColor: "#FFE8CC",
-  },
-  emojiText: {
-    fontSize: 20,
+    fontSize: 28,
+    fontWeight: "700",
+    color: "#0F172A",
+    letterSpacing: -0.5,
+    lineHeight: 36,
   },
   timeDateContainer: {
     flexDirection: "row",
     alignItems: "center",
-    gap: Spacing.sm,
+    gap: Spacing.md,
     marginTop: Spacing.xs,
   },
   timeBadge: {
     flexDirection: "row",
     alignItems: "center",
     gap: Spacing.xs,
-    paddingHorizontal: Spacing.sm,
-    paddingVertical: Spacing.xs - 2,
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.xs,
     borderRadius: BorderRadius.md,
-    backgroundColor: "#FFF8F0",
+    backgroundColor: "#EFF6FF",
     borderWidth: 1,
-    borderColor: "#FFE8CC",
+    borderColor: "#DBEAFE",
   },
   timeText: {
     fontSize: 13,
-    fontWeight: "700",
-    color: "#FF9800",
-    letterSpacing: 0.3,
+    fontWeight: "600",
+    color: "#2563EB",
+    letterSpacing: 0.2,
   },
   dateText: {
     fontSize: 13,
-    color: "#757575",
+    color: "#64748B",
     fontWeight: "500",
   },
   attendanceCard: {
     marginHorizontal: Spacing["2xl"],
     backgroundColor: "#FFFFFF",
-    borderRadius: BorderRadius["2xl"] + 8,
-    padding: 0,
+    borderRadius: BorderRadius.lg,
+    padding: Spacing.xl,
     shadowColor: "#000",
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.1,
-    shadowRadius: 20,
-    elevation: 10,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 8,
+    elevation: 3,
     borderWidth: 1,
-    borderColor: "#F0F0F0",
-    overflow: "hidden",
+    borderColor: "#E2E8F0",
     marginTop: Spacing.xl,
-  },
-  cardAccent: {
-    height: 4,
-    width: "100%",
   },
   statusBadgeContainer: {
     flexDirection: "row",
     alignItems: "center",
     alignSelf: "flex-start",
-    marginTop: Spacing.lg + 4,
     marginBottom: Spacing.lg,
-    marginHorizontal: Spacing.xl + 4,
-    paddingHorizontal: Spacing.md + 4,
-    paddingVertical: Spacing.xs + 4,
-    borderRadius: BorderRadius.full,
-    backgroundColor: "#F8F9FA",
-    borderWidth: 1.5,
-    borderColor: "#E9ECEF",
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.05,
-    shadowRadius: 2,
-    elevation: 1,
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.xs + 2,
+    borderRadius: BorderRadius.md,
+    backgroundColor: "#F1F5F9",
   },
   statusDot: {
     width: 8,
@@ -1236,72 +1227,60 @@ const styles = StyleSheet.create({
     marginRight: Spacing.xs,
   },
   statusText: {
-    fontSize: 12,
-    fontWeight: "700",
+    fontSize: 11,
+    fontWeight: "600",
     textTransform: "uppercase",
     letterSpacing: 0.5,
   },
   attendanceCardContent: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
     marginBottom: Spacing.xl,
-    paddingHorizontal: Spacing.xl + 4,
   },
-  dateOval: {
-    backgroundColor: "#FFF8F0",
-    borderRadius: BorderRadius.full,
-    paddingHorizontal: Spacing.lg + 6,
-    paddingVertical: Spacing.md + 4,
-    minWidth: 90,
-    alignItems: "center",
-    borderWidth: 2,
-    borderColor: "#FFE8CC",
-    shadowColor: "#FF9800",
-    shadowOffset: { width: 0, height: 3 },
-    shadowOpacity: 0.2,
-    shadowRadius: 6,
-    elevation: 3,
+  dateContainer: {
+    marginBottom: Spacing.lg,
+    paddingBottom: Spacing.lg,
+    borderBottomWidth: 1,
+    borderBottomColor: "#E2E8F0",
   },
-  dateOvalText: {
-    fontSize: 14,
-    fontWeight: "600",
-    color: "#FF9800",
+  dateLabel: {
+    fontSize: 12,
+    fontWeight: "500",
+    color: "#64748B",
+    marginBottom: 4,
+    textTransform: "uppercase",
+    letterSpacing: 0.5,
+  },
+  dateValue: {
+    fontSize: 18,
+    fontWeight: "700",
+    color: "#0F172A",
   },
   attendanceInfo: {
-    flex: 1,
-    marginLeft: Spacing.lg,
+    flexDirection: "row",
+    gap: Spacing.xl,
   },
   attendanceInfoItem: {
-    marginBottom: Spacing.sm,
+    flex: 1,
   },
   infoLabelRow: {
     flexDirection: "row",
     alignItems: "center",
     gap: Spacing.xs,
-    marginBottom: 2,
+    marginBottom: Spacing.xs,
   },
   attendanceInfoLabel: {
     fontSize: 12,
-    color: "#5D4037",
-    opacity: 0.8,
+    color: "#64748B",
     fontWeight: "500",
   },
   attendanceInfoValue: {
-    fontSize: 16,
-    fontWeight: "600",
-    color: "#E65100",
+    fontSize: 18,
+    fontWeight: "700",
+    color: "#0F172A",
   },
   checkInButtonContainer: {
-    borderRadius: BorderRadius.full,
+    borderRadius: BorderRadius.md,
     overflow: "hidden",
-    marginHorizontal: Spacing.xl + 4,
     marginBottom: Spacing.lg,
-    shadowColor: "#FF9800",
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.3,
-    shadowRadius: 12,
-    elevation: 6,
   },
   checkInButton: {
     paddingHorizontal: Spacing.xl,
@@ -1311,166 +1290,127 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     gap: Spacing.md,
     minHeight: 56,
+    backgroundColor: "#2563EB",
   },
-  buttonIconContainer: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
-    backgroundColor: "rgba(255, 255, 255, 0.2)",
-    alignItems: "center",
-    justifyContent: "center",
+  checkInButtonDisabled: {
+    backgroundColor: "#E2E8F0",
+  },
+  checkInButtonPressed: {
+    backgroundColor: "#1D4ED8",
   },
   checkInButtonText: {
     fontSize: 16,
-    fontWeight: "700",
-    letterSpacing: 0.8,
+    fontWeight: "600",
+    letterSpacing: 0.3,
   },
   durationRow: {
     flexDirection: "row",
     alignItems: "center",
-    gap: Spacing.md,
+    gap: Spacing.sm,
     paddingTop: Spacing.lg,
-    paddingBottom: Spacing.lg + 4,
-    paddingHorizontal: Spacing.xl + 4,
     borderTopWidth: 1,
-    borderTopColor: "#F0F0F0",
-    backgroundColor: "#FAFAFA",
-  },
-  durationIconContainer: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    backgroundColor: "#FFF8F0",
-    alignItems: "center",
-    justifyContent: "center",
-    borderWidth: 1,
-    borderColor: "#FFE8CC",
+    borderTopColor: "#E2E8F0",
   },
   durationText: {
     fontSize: 14,
-    color: "#424242",
-    fontWeight: "600",
-    letterSpacing: 0.2,
+    color: "#64748B",
+    fontWeight: "500",
   },
   sectionCard: {
     marginHorizontal: Spacing["2xl"],
     backgroundColor: "#FFFFFF",
-    borderRadius: BorderRadius["2xl"] + 8,
-    padding: Spacing.xl + 6,
+    borderRadius: BorderRadius.lg,
+    padding: Spacing.xl,
     borderWidth: 1,
-    borderColor: "#F0F0F0",
+    borderColor: "#E2E8F0",
     shadowColor: "#000",
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.08,
-    shadowRadius: 16,
-    elevation: 5,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 8,
+    elevation: 3,
   },
   sectionHeader: {
-    marginBottom: Spacing.xl,
-    marginTop: -Spacing.md,
+    marginBottom: Spacing.lg,
   },
   sectionTitleRow: {
     flexDirection: "row",
     alignItems: "center",
     gap: Spacing.md,
-    marginBottom: Spacing.md,
-  },
-  sectionIconContainer: {
-    width: 40,
-    height: 40,
-    borderRadius: 12,
-    backgroundColor: "#FFF8F0",
-    alignItems: "center",
-    justifyContent: "center",
-    borderWidth: 1.5,
-    borderColor: "#FFE8CC",
-  },
-  sectionDivider: {
-    height: 1,
-    backgroundColor: "#F0F0F0",
-    marginTop: Spacing.sm,
   },
   sectionTitle: {
-    color: "#1A1A1A",
-    fontWeight: "800",
-    fontSize: 22,
+    color: "#0F172A",
+    fontWeight: "700",
+    fontSize: 18,
     letterSpacing: -0.3,
   },
   shortcutsGrid: {
     flexDirection: "row",
     flexWrap: "wrap",
     gap: Spacing.md,
-    marginTop: 0,
   },
   shortcutItem: {
     width: "30%",
     aspectRatio: 1,
-    borderRadius: BorderRadius.lg + 4,
+    borderRadius: BorderRadius.md,
     alignItems: "center",
     justifyContent: "center",
     padding: Spacing.md,
-    paddingTop: Spacing.lg,
-    backgroundColor: "#FFFFFF",
-    borderWidth: 1.5,
-    borderColor: "#F5F5F5",
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 3 },
-    shadowOpacity: 0.08,
-    shadowRadius: 8,
-    elevation: 3,
+    backgroundColor: "transparent",
+  },
+  shortcutItemPressed: {
+    backgroundColor: "transparent",
+    opacity: 0.7,
   },
   shortcutIconContainer: {
     position: "relative",
-    marginBottom: Spacing.md + 2,
-    marginTop: Spacing.lg + 12,
-  },
-  shortcutIconBackground: {
-    width: 64,
-    height: 64,
-    borderRadius: BorderRadius.lg + 4,
+    marginBottom: Spacing.md,
+    width: 56,
+    height: 56,
+    borderRadius: BorderRadius.md,
+    backgroundColor: "#FFFFFF",
     alignItems: "center",
     justifyContent: "center",
-    borderWidth: 2,
-    borderColor: "#FFE8CC",
-    shadowColor: "#FF9800",
-    shadowOffset: { width: 0, height: 3 },
-    shadowOpacity: 0.15,
-    shadowRadius: 6,
-    elevation: 3,
-    overflow: "hidden",
-    padding: Spacing.md,
-    paddingTop: Spacing["2xl"],
+    borderWidth: 1.5,
+    borderColor: "#DBEAFE",
+    ...Platform.select({
+      ios: {
+        shadowColor: "#2563EB",
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.1,
+        shadowRadius: 4,
+      },
+      android: {
+        elevation: 3,
+      },
+      web: {
+        boxShadow: "0 2px 4px rgba(37, 99, 235, 0.1)",
+      },
+    }),
   },
   shortcutLabel: {
     textAlign: "center",
-    fontSize: 13,
+    fontSize: 12,
     fontWeight: "600",
-    color: "#424242",
-    letterSpacing: 0.2,
+    color: "#334155",
   },
   badge: {
     position: "absolute",
-    top: -10,
-    right: -12,
-    backgroundColor: Colors.dark.error,
+    top: -6,
+    right: -6,
+    backgroundColor: "#EF4444",
     borderRadius: BorderRadius.full,
-    minWidth: 20,
-    height: 20,
+    minWidth: 18,
+    height: 18,
     alignItems: "center",
     justifyContent: "center",
-    paddingHorizontal: 5,
+    paddingHorizontal: 4,
     borderWidth: 2,
     borderColor: "#FFFFFF",
-    shadowColor: Colors.dark.error,
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.5,
-    shadowRadius: 4,
-    elevation: 5,
   },
   badgeText: {
     color: "#FFFFFF",
-    fontSize: 11,
-    fontWeight: "800",
+    fontSize: 10,
+    fontWeight: "700",
     lineHeight: 12,
   },
   errorContainer: {
@@ -1493,18 +1433,8 @@ const styles = StyleSheet.create({
     padding: Spacing.xs,
   },
   refreshButton: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
     alignItems: "center",
     justifyContent: "center",
-    backgroundColor: "#FFFFFF",
-    borderWidth: 1.5,
-    borderColor: "#FFE8CC",
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.08,
-    shadowRadius: 4,
-    elevation: 2,
+    padding: Spacing.xs,
   },
 });

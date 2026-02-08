@@ -72,7 +72,7 @@ const styles = StyleSheet.create({
     borderRadius: 5,
     backgroundColor: "#F44336",
     borderWidth: 2,
-    borderColor: "#FFE8CC",
+    borderColor: "#EFF6FF",
   },
   badgeDot: {
     flex: 1,
@@ -85,7 +85,7 @@ const styles = StyleSheet.create({
     borderRadius: 18,
     overflow: "hidden",
     borderWidth: 2,
-    borderColor: "#FFB380",
+    borderColor: "#2563EB",
   },
   profileImage: {
     width: "100%",

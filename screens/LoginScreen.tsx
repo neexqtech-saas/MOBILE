@@ -15,6 +15,7 @@ import { Feather } from "@expo/vector-icons";
 import { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { LinearGradient } from "expo-linear-gradient";
+import * as Haptics from "expo-haptics";
 
 import { ScreenKeyboardAwareScrollView } from "@/components/ScreenKeyboardAwareScrollView";
 import { ThemedText } from "@/components/ThemedText";
@@ -127,7 +128,7 @@ export default function LoginScreen({ navigation }: LoginScreenProps) {
           {/* Username Input */}
           <View style={styles.inputContainer}>
             <View style={styles.inputWrapper}>
-              <Feather name="user" size={20} color="#FFB380" style={styles.inputIcon} />
+              <Feather name="user" size={20} color="#2563EB" style={styles.inputIcon} />
               <TextInput
                 style={styles.input}
                 value={username}
@@ -150,7 +151,7 @@ export default function LoginScreen({ navigation }: LoginScreenProps) {
           {/* Password Input */}
           <View style={styles.inputContainer}>
             <View style={styles.inputWrapper}>
-              <Feather name="lock" size={20} color="#FFB380" style={styles.inputIcon} />
+              <Feather name="lock" size={20} color="#2563EB" style={styles.inputIcon} />
               <TextInput
                 style={[styles.input, styles.passwordInput]}
                 value={password}
@@ -176,7 +177,7 @@ export default function LoginScreen({ navigation }: LoginScreenProps) {
                 <Feather
                   name={showPassword ? "eye-off" : "eye"}
                   size={20}
-                  color="#FFB380"
+                  color="#2563EB"
                 />
               </Pressable>
             </View>
@@ -191,19 +192,28 @@ export default function LoginScreen({ navigation }: LoginScreenProps) {
 
           {/* Login Button */}
           <Pressable
-            onPress={handleLogin}
+            onPress={() => {
+              if (!isLoading) {
+                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+                handleLogin();
+              }
+            }}
             disabled={isLoading}
             style={({ pressed }) => [
               styles.loginButtonContainer,
-              pressed && styles.loginButtonPressed,
+              pressed && !isLoading && styles.loginButtonPressed,
+              {
+                opacity: isLoading ? 0.7 : 1,
+                transform: [{ scale: pressed && !isLoading ? 0.98 : 1 }],
+              },
             ]}
           >
             {({ pressed }) => (
             <LinearGradient
                 colors={
                   pressed || isLoading
-                    ? ["#CC6600", "#E67300", "#CC6600"]
-                    : ["#FFB380", "#FFCC99", "#FFB380"]
+                    ? ["#1D4ED8", "#60A5FA", "#1D4ED8"]
+                    : ["#2563EB", "#93C5FD", "#2563EB"]
                 }
               start={{ x: 0, y: 0 }}
               end={{ x: 1, y: 0 }}
@@ -263,7 +273,7 @@ const styles = StyleSheet.create({
     width: 200,
     height: 200,
     borderRadius: 100,
-    backgroundColor: "#FFCC99",
+    backgroundColor: "#93C5FD",
     opacity: 0.12,
   },
   decorativeCircle2: {
@@ -271,7 +281,7 @@ const styles = StyleSheet.create({
     width: 180,
     height: 180,
     borderRadius: 90,
-    backgroundColor: "#FFD9B3",
+    backgroundColor: "#BFDBFE",
     opacity: 0.18,
   },
   decorativeCircle3: {
@@ -279,7 +289,7 @@ const styles = StyleSheet.create({
     width: 160,
     height: 160,
     borderRadius: 80,
-    backgroundColor: "#FFE6CC",
+    backgroundColor: "#DBEAFE",
     opacity: 0.25,
   },
   logoInner: {
@@ -289,14 +299,14 @@ const styles = StyleSheet.create({
     backgroundColor: "#FFFFFF",
     alignItems: "center",
     justifyContent: "center",
-    shadowColor: "#FFE0CC",
+    shadowColor: "#DBEAFE",
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.15,
     shadowRadius: 10,
     elevation: 5,
     zIndex: 10,
     borderWidth: 2,
-    borderColor: "#FFE8CC",
+    borderColor: "#EFF6FF",
     padding: Spacing.md,
     overflow: "hidden",
   },
@@ -318,7 +328,7 @@ const styles = StyleSheet.create({
   logoSubText: {
     fontSize: 13,
     fontWeight: "400",
-    color: "#FFB380",
+    color: "#2563EB",
     marginTop: 6,
     letterSpacing: 0.3,
     fontFamily: Platform.select({ ios: "System", android: "sans-serif" }),
@@ -362,8 +372,8 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing.lg,
     height: 56,
     borderWidth: 1.5,
-    borderColor: "#FFE0CC",
-    shadowColor: "#FFE0CC",
+    borderColor: "#DBEAFE",
+    shadowColor: "#DBEAFE",
         shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.1,
         shadowRadius: 4,
@@ -393,7 +403,7 @@ const styles = StyleSheet.create({
   },
   forgotText: {
     fontSize: 13,
-    color: "#FFB380",
+    color: "#2563EB",
     fontWeight: "500",
     fontFamily: Platform.select({ ios: "System", android: "sans-serif-medium" }),
   },
@@ -401,7 +411,7 @@ const styles = StyleSheet.create({
     marginTop: Spacing.lg,
     borderRadius: BorderRadius.lg,
     overflow: "hidden",
-    shadowColor: "#FFB380",
+    shadowColor: "#2563EB",
     shadowOffset: { width: 0, height: 3 },
     shadowOpacity: 0.2,
     shadowRadius: 8,
@@ -437,7 +447,7 @@ const styles = StyleSheet.create({
   },
   signupLink: {
     fontSize: 13,
-    color: "#FFB380",
+    color: "#2563EB",
     fontWeight: "500",
     fontFamily: Platform.select({ ios: "System", android: "sans-serif-medium" }),
   },

@@ -3,6 +3,7 @@ import { View, StyleSheet, TextInput, Pressable, Alert, ActivityIndicator, Scrol
 import { Feather } from "@expo/vector-icons";
 import { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { useNavigation } from "@react-navigation/native";
+import * as Location from "expo-location";
 
 import { ScreenScrollView } from "@/components/ScreenScrollView";
 import { ThemedText } from "@/components/ThemedText";
@@ -41,20 +42,19 @@ export default function CreateVisitScreen() {
   const [error, setError] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  // Set today's date as default
+  // Set today's date and current time as default (uneditable for employees)
   React.useEffect(() => {
-    const today = new Date();
-    const year = today.getFullYear();
-    const month = String(today.getMonth() + 1).padStart(2, '0');
-    const day = String(today.getDate()).padStart(2, '0');
+    const now = new Date();
+    const year = now.getFullYear();
+    const month = String(now.getMonth() + 1).padStart(2, '0');
+    const day = String(now.getDate()).padStart(2, '0');
     setScheduleDate(`${year}-${month}-${day}`);
     
-    // Set default time to 2 hours from now
-    const defaultTime = new Date();
-    defaultTime.setHours(defaultTime.getHours() + 2);
-    const hours = String(defaultTime.getHours()).padStart(2, '0');
-    const minutes = String(defaultTime.getMinutes()).padStart(2, '0');
-    setScheduleTime(`${hours}:${minutes}:00`);
+    // Set current time
+    const hours = String(now.getHours()).padStart(2, '0');
+    const minutes = String(now.getMinutes()).padStart(2, '0');
+    const seconds = String(now.getSeconds()).padStart(2, '0');
+    setScheduleTime(`${hours}:${minutes}:${seconds}`);
   }, []);
 
   const handleSubmit = async () => {
@@ -83,13 +83,7 @@ export default function CreateVisitScreen() {
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
       return;
     }
-    if (!scheduleTime.trim()) {
-      const errorMsg = "Please enter schedule time";
-      setError(errorMsg);
-      Alert.alert("Validation Error", errorMsg, [{ text: "OK" }]);
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
-      return;
-    }
+    // Schedule time is optional - removed validation
     if (!clientName.trim()) {
       const errorMsg = "Please enter client name";
       setError(errorMsg);
@@ -164,14 +158,16 @@ export default function CreateVisitScreen() {
       return;
     }
 
-    // Validate time format
-    const timeRegex = /^\d{2}:\d{2}:\d{2}$/;
-    if (!timeRegex.test(scheduleTime)) {
-      const errorMsg = "Time must be in HH:MM:SS format (e.g., 14:00:00)";
-      setError(errorMsg);
-      Alert.alert("Validation Error", errorMsg, [{ text: "OK" }]);
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
-      return;
+    // Validate time format only if provided (schedule_time is optional)
+    if (scheduleTime.trim()) {
+      const timeRegex = /^\d{2}:\d{2}:\d{2}$/;
+      if (!timeRegex.test(scheduleTime)) {
+        const errorMsg = "Time must be in HH:MM:SS format (e.g., 14:00:00)";
+        setError(errorMsg);
+        Alert.alert("Validation Error", errorMsg, [{ text: "OK" }]);
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+        return;
+      }
     }
 
     // Validate email if provided
@@ -197,11 +193,26 @@ export default function CreateVisitScreen() {
         return;
       }
 
-      const visitData = {
+      // Get GPS location for auto check-in
+      let latitude: number | undefined = undefined;
+      let longitude: number | undefined = undefined;
+      
+      try {
+        const { status } = await Location.requestForegroundPermissionsAsync();
+        if (status === 'granted') {
+          const location = await Location.getCurrentPositionAsync({});
+          latitude = parseFloat(location.coords.latitude.toFixed(6));
+          longitude = parseFloat(location.coords.longitude.toFixed(6));
+        }
+      } catch (locationError) {
+        console.log('Location permission denied or error:', locationError);
+        // Continue without location - backend will handle it
+      }
+
+      const visitData: any = {
         title: title.trim(),
         description: description.trim() || undefined,
         schedule_date: scheduleDate,
-        schedule_time: scheduleTime,
         client_name: clientName.trim(),
         location_name: locationName.trim() || undefined,
         address: address.trim(),
@@ -213,6 +224,16 @@ export default function CreateVisitScreen() {
         contact_phone: contactPhone.trim(),
         contact_email: contactEmail.trim() || undefined,
       };
+
+      // Schedule time is always set (current time)
+      visitData.schedule_time = scheduleTime;
+
+      // Add GPS coordinates for auto check-in
+      if (latitude !== undefined && longitude !== undefined) {
+        visitData.latitude = latitude;
+        visitData.longitude = longitude;
+        visitData.check_in_note = "Auto check-in on visit creation";
+      }
 
       const response = await apiService.createVisit(siteId, userId, visitData);
 
@@ -325,39 +346,35 @@ export default function CreateVisitScreen() {
 
         <Spacer height={Spacing.lg} />
 
-        {/* Schedule Date */}
+        {/* Schedule Date - Uneditable (Today's Date) */}
         <View>
           <ThemedText type="small" style={{ color: theme.textMuted, marginBottom: Spacing.xs }}>
             Schedule Date *
           </ThemedText>
           <TextInput
-            style={[styles.input, { backgroundColor: theme.backgroundDefault, color: theme.text, borderColor: theme.border }]}
+            style={[styles.input, { backgroundColor: "#F5F5F5", color: theme.textMuted, borderColor: theme.border, opacity: 0.7 }]}
             placeholder="YYYY-MM-DD"
             placeholderTextColor={theme.textMuted}
             value={scheduleDate}
-            onChangeText={(text) => {
-              setScheduleDate(text);
-              setError("");
-            }}
+            editable={false}
+            pointerEvents="none"
           />
         </View>
 
         <Spacer height={Spacing.lg} />
 
-        {/* Schedule Time */}
+        {/* Schedule Time - Uneditable (Current Time) */}
         <View>
           <ThemedText type="small" style={{ color: theme.textMuted, marginBottom: Spacing.xs }}>
-            Schedule Time * (HH:MM:SS)
+            Schedule Time *
           </ThemedText>
           <TextInput
-            style={[styles.input, { backgroundColor: theme.backgroundDefault, color: theme.text, borderColor: theme.border }]}
-            placeholder="14:00:00"
+            style={[styles.input, { backgroundColor: "#F5F5F5", color: theme.textMuted, borderColor: theme.border, opacity: 0.7 }]}
+            placeholder="HH:MM:SS"
             placeholderTextColor={theme.textMuted}
             value={scheduleTime}
-            onChangeText={(text) => {
-              setScheduleTime(text);
-              setError("");
-            }}
+            editable={false}
+            pointerEvents="none"
           />
         </View>
 

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { View, StyleSheet, Pressable, ActivityIndicator } from "react-native";
+import { View, StyleSheet, Pressable, ActivityIndicator, Platform, Dimensions } from "react-native";
 import { Feather } from "@expo/vector-icons";
 import { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { useNavigation } from "@react-navigation/native";
@@ -94,6 +94,34 @@ export default function TaskScreen() {
     });
   };
 
+  const formatTime = (timeStr: string | null | undefined) => {
+    if (!timeStr) return "Not set";
+    try {
+      // Check if it's already a full datetime string (contains 'T' and has date part)
+      let date: Date;
+      if (timeStr.includes('T') && timeStr.length > 10) {
+        // It's a full datetime string, parse directly
+        date = new Date(timeStr);
+      } else {
+        // It's just a time string, add a date
+        date = new Date(`2000-01-01T${timeStr}`);
+      }
+      
+      // Check if date is valid
+      if (isNaN(date.getTime())) {
+        return timeStr;
+      }
+      
+      return date.toLocaleTimeString("en-US", {
+        hour: "2-digit",
+        minute: "2-digit",
+        hour12: true,
+      });
+    } catch {
+      return timeStr;
+    }
+  };
+
   const isOverdue = (dateStr: string) => {
     return new Date(dateStr) < new Date();
   };
@@ -116,15 +144,26 @@ export default function TaskScreen() {
         style={({ pressed }) => [
           styles.taskCard,
           { 
-            backgroundColor: isPending ? Colors.dark.primary + "08" : theme.backgroundDefault,
+            backgroundColor: isPending ? Colors.dark.primary + "08" : "#FFFFFF",
             borderWidth: isPending ? 2 : 1,
-            borderColor: isPending ? Colors.dark.primary : theme.border,
-            opacity: pressed ? 0.7 : 1,
-            shadowColor: isPending ? Colors.dark.primary : "#000",
-            shadowOffset: { width: 0, height: isPending ? 3 : 1 },
-            shadowOpacity: isPending ? 0.15 : 0.05,
-            shadowRadius: isPending ? 6 : 2,
-            elevation: isPending ? 4 : 1,
+            borderColor: isPending ? Colors.dark.primary : "#E2E8F0",
+            opacity: pressed ? 0.9 : 1,
+            ...Platform.select({
+              ios: {
+                shadowColor: isPending ? Colors.dark.primary : "#000",
+                shadowOffset: { width: 0, height: isPending ? 4 : 2 },
+                shadowOpacity: isPending ? 0.2 : 0.08,
+                shadowRadius: isPending ? 8 : 8,
+              },
+              android: {
+                elevation: isPending ? 4 : 3,
+              },
+              web: {
+                boxShadow: isPending 
+                  ? `0 4px 12px ${Colors.dark.primary}30`
+                  : "0 2px 8px rgba(0, 0, 0, 0.08)",
+              },
+            }),
           },
         ]}
       >
@@ -148,6 +187,7 @@ export default function TaskScreen() {
               type="body"
               style={{ fontWeight: isPending ? "700" : "600", flex: 1, color: isPending ? Colors.dark.primary : theme.text }}
               numberOfLines={1}
+              ellipsizeMode="tail"
             >
               {task.title}
             </ThemedText>
@@ -155,12 +195,13 @@ export default function TaskScreen() {
           <View
             style={[
               styles.statusBadge,
-              { backgroundColor: statusColor + "20" },
+              { backgroundColor: statusColor + "15", borderColor: statusColor + "40" },
             ]}
           >
+            <View style={[styles.statusDot, { backgroundColor: statusColor }]} />
             <ThemedText
               type="small"
-              style={{ color: statusColor, fontWeight: "600" }}
+              style={[styles.statusText, { color: statusColor }]}
             >
               {getStatusLabel(task.status)}
             </ThemedText>
@@ -186,6 +227,8 @@ export default function TaskScreen() {
               <ThemedText
                 type="small"
                 style={{ color: overdue ? Colors.dark.error : theme.textMuted }}
+                numberOfLines={1}
+                ellipsizeMode="tail"
               >
                 {formatDate(task.dueDate)}
                 {overdue ? " (Overdue)" : ""}
@@ -193,10 +236,41 @@ export default function TaskScreen() {
             </View>
             <View style={styles.taskMetaItem}>
               <Feather name="user" size={14} color={theme.textMuted} />
-              <ThemedText type="small" style={{ color: theme.textMuted }}>
+              <ThemedText 
+                type="small" 
+                style={{ color: theme.textMuted }}
+                numberOfLines={1}
+                ellipsizeMode="tail"
+              >
                 {task.assignedBy}
               </ThemedText>
             </View>
+            {task.status === "completed" && task.startTime && task.endTime && (
+              <>
+                <View style={styles.taskMetaItem}>
+                  <Feather name="play-circle" size={14} color={Colors.dark.success} />
+                  <ThemedText 
+                    type="small" 
+                    style={{ color: Colors.dark.success }}
+                    numberOfLines={1}
+                    ellipsizeMode="tail"
+                  >
+                    Start: {formatTime(task.startTime)}
+                  </ThemedText>
+                </View>
+                <View style={styles.taskMetaItem}>
+                  <Feather name="stop-circle" size={14} color={Colors.dark.success} />
+                  <ThemedText 
+                    type="small" 
+                    style={{ color: Colors.dark.success }}
+                    numberOfLines={1}
+                    ellipsizeMode="tail"
+                  >
+                    End: {formatTime(task.endTime)}
+                  </ThemedText>
+                </View>
+              </>
+            )}
           </View>
           <View style={styles.taskIcons}>
             {task.attachments > 0 ? (
@@ -247,28 +321,46 @@ export default function TaskScreen() {
         />
       </View>
       <Spacer height={Spacing.lg} />
+      <View style={styles.header}>
+        <View style={styles.titleContainer}>
+          <View style={styles.titleIconContainer}>
+            <Feather name="check-square" size={22} color={Colors.dark.primary} />
+          </View>
+          <ThemedText type="h4" style={styles.title}>My Tasks</ThemedText>
+        </View>
+      </View>
+      <Spacer height={Spacing.lg} />
       <View style={styles.statsRow}>
-        <View style={[styles.statCard, { backgroundColor: Colors.dark.pending + "20" }]}>
-          <ThemedText type="h3" style={{ color: Colors.dark.pending }}>
+        <View style={[styles.statCard, { backgroundColor: Colors.dark.pending + "15", borderColor: Colors.dark.pending + "30" }]}>
+          <View style={[styles.statIconContainer, { backgroundColor: Colors.dark.pending + "20" }]}>
+            <Feather name="clock" size={20} color={Colors.dark.pending} />
+          </View>
+          <ThemedText type="h3" style={[styles.statValue, { color: Colors.dark.pending }]}>
             {taskCounts.pending}
           </ThemedText>
-          <ThemedText type="small" style={{ color: Colors.dark.pending }}>
+          <ThemedText type="small" style={[styles.statLabel, { color: Colors.dark.pending }]}>
             Pending
           </ThemedText>
         </View>
-        <View style={[styles.statCard, { backgroundColor: Colors.dark.primary + "20" }]}>
-          <ThemedText type="h3" style={{ color: Colors.dark.primary }}>
+        <View style={[styles.statCard, { backgroundColor: Colors.dark.primary + "15", borderColor: Colors.dark.primary + "30" }]}>
+          <View style={[styles.statIconContainer, { backgroundColor: Colors.dark.primary + "20" }]}>
+            <Feather name="play-circle" size={20} color={Colors.dark.primary} />
+          </View>
+          <ThemedText type="h3" style={[styles.statValue, { color: Colors.dark.primary }]}>
             {taskCounts.inProgress}
           </ThemedText>
-          <ThemedText type="small" style={{ color: Colors.dark.primary }}>
+          <ThemedText type="small" style={[styles.statLabel, { color: Colors.dark.primary }]}>
             In Progress
           </ThemedText>
         </View>
-        <View style={[styles.statCard, { backgroundColor: Colors.dark.success + "20" }]}>
-          <ThemedText type="h3" style={{ color: Colors.dark.success }}>
+        <View style={[styles.statCard, { backgroundColor: Colors.dark.success + "15", borderColor: Colors.dark.success + "30" }]}>
+          <View style={[styles.statIconContainer, { backgroundColor: Colors.dark.success + "20" }]}>
+            <Feather name="check-circle" size={20} color={Colors.dark.success} />
+          </View>
+          <ThemedText type="h3" style={[styles.statValue, { color: Colors.dark.success }]}>
             {taskCounts.completed}
           </ThemedText>
-          <ThemedText type="small" style={{ color: Colors.dark.success }}>
+          <ThemedText type="small" style={[styles.statLabel, { color: Colors.dark.success }]}>
             Completed
           </ThemedText>
         </View>
@@ -280,23 +372,31 @@ export default function TaskScreen() {
         {FILTERS.map((filter) => (
           <Pressable
             key={filter}
-            onPress={() => setActiveFilter(filter)}
-            style={[
+            onPress={() => {
+              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+              setActiveFilter(filter);
+            }}
+            style={({ pressed }) => [
               styles.filterChip,
               {
                 backgroundColor:
                   activeFilter === filter
                     ? Colors.dark.primary
                     : theme.backgroundDefault,
+                borderColor: activeFilter === filter ? Colors.dark.primary : "#E2E8F0",
+                opacity: pressed ? 0.8 : 1,
               },
             ]}
           >
             <ThemedText
               type="small"
-              style={{
-                color: activeFilter === filter ? "#000000" : theme.text,
-                fontWeight: activeFilter === filter ? "600" : "400",
-              }}
+              style={[
+                styles.filterText,
+                {
+                  color: activeFilter === filter ? "#FFFFFF" : theme.text,
+                  fontWeight: activeFilter === filter ? "700" : "600",
+                },
+              ]}
             >
               {filter}
             </ThemedText>
@@ -308,16 +408,21 @@ export default function TaskScreen() {
 
       {isLoading ? (
         <View style={styles.loadingContainer}>
-          <ActivityIndicator size="large" color={Colors.dark.primary} />
-          <ThemedText style={{ color: theme.textMuted, marginTop: Spacing.md }}>
+          <View style={styles.loadingIconContainer}>
+            <ActivityIndicator size="large" color={Colors.dark.primary} />
+          </View>
+          <ThemedText style={styles.loadingText}>
             Loading tasks...
           </ThemedText>
         </View>
       ) : filteredTasks.length === 0 ? (
-        <View style={[styles.emptyState, { backgroundColor: theme.backgroundDefault }]}>
-          <Feather name="check-square" size={48} color={theme.textMuted} />
-          <ThemedText style={{ color: theme.textMuted, marginTop: Spacing.md }}>
-            No tasks found
+        <View style={styles.emptyState}>
+          <View style={styles.emptyIconContainer}>
+            <Feather name="check-square" size={56} color={theme.textMuted} />
+          </View>
+          <ThemedText style={styles.emptyTitle}>No Tasks Found</ThemedText>
+          <ThemedText style={styles.emptySubtitle}>
+            {activeFilter === "All" ? "No tasks available" : `No ${activeFilter.toLowerCase()} tasks`}
           </ThemedText>
         </View>
       ) : (
@@ -342,29 +447,116 @@ const styles = StyleSheet.create({
     paddingTop: Spacing.md,
     paddingBottom: Spacing.md,
   },
+  header: {
+    paddingHorizontal: Spacing["2xl"],
+  },
+  titleContainer: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: Spacing.sm,
+  },
+  titleIconContainer: {
+    width: 36,
+    height: 36,
+    borderRadius: BorderRadius.md,
+    backgroundColor: Colors.dark.primary + "15",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  title: {
+    fontSize: Platform.select({
+      web: Dimensions.get('window').width > 768 ? 24 : 20,
+      default: 20,
+    }),
+    fontWeight: "700",
+    color: "#0F172A",
+    letterSpacing: -0.3,
+  },
   statsRow: {
     flexDirection: "row",
     gap: Spacing.md,
+    paddingHorizontal: Spacing["2xl"],
+    alignItems: "stretch",
   },
   statCard: {
     flex: 1,
-    padding: Spacing.lg,
-    borderRadius: BorderRadius.lg,
+    padding: Platform.select({
+      web: Dimensions.get('window').width > 768 ? Spacing.xl : Spacing.lg,
+      default: Spacing.lg,
+    }),
+    borderRadius: BorderRadius.xl,
     alignItems: "center",
+    justifyContent: "center",
+    borderWidth: 1,
+    minHeight: Platform.select({
+      web: Dimensions.get('window').width > 768 ? 140 : 120,
+      default: 120,
+    }),
+    ...Platform.select({
+      ios: {
+        shadowColor: "#000",
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.08,
+        shadowRadius: 8,
+      },
+      android: {
+        elevation: 3,
+      },
+      web: {
+        boxShadow: "0 2px 8px rgba(0, 0, 0, 0.08)",
+      },
+    }),
+  },
+  statIconContainer: {
+    width: 40,
+    height: 40,
+    borderRadius: BorderRadius.md,
+    alignItems: "center",
+    justifyContent: "center",
+    marginBottom: Spacing.md,
+  },
+  statValue: {
+    fontSize: Platform.select({
+      web: Dimensions.get('window').width > 768 ? 32 : 28,
+      default: 28,
+    }),
+    fontWeight: "800",
+    marginBottom: Spacing.sm,
+    letterSpacing: -0.5,
+    textAlign: "center",
+  },
+  statLabel: {
+    fontWeight: "700",
+    fontSize: 12,
+    textTransform: "uppercase",
+    letterSpacing: 0.5,
+    textAlign: "center",
   },
   filterRow: {
     flexDirection: "row",
     gap: Spacing.sm,
+    paddingHorizontal: Spacing["2xl"],
+    flexWrap: "wrap",
   },
   filterChip: {
     paddingHorizontal: Spacing.lg,
     paddingVertical: Spacing.sm,
     borderRadius: BorderRadius.full,
+    borderWidth: 1.5,
+    minHeight: 36,
+  },
+  filterText: {
+    fontSize: 13,
+    letterSpacing: 0.2,
   },
   taskCard: {
-    padding: Spacing.lg,
-    borderRadius: BorderRadius.lg,
+    padding: Platform.select({
+      web: Dimensions.get('window').width > 768 ? Spacing.xl : Spacing.lg,
+      default: Spacing.lg,
+    }),
+    borderRadius: BorderRadius.xl,
     marginBottom: Spacing.md,
+    marginHorizontal: Spacing["2xl"],
   },
   pendingBadge: {
     flexDirection: "row",
@@ -375,28 +567,49 @@ const styles = StyleSheet.create({
     borderRadius: BorderRadius.full,
     backgroundColor: Colors.dark.primary + "15",
     marginBottom: Spacing.sm,
+    borderWidth: 1,
+    borderColor: Colors.dark.primary + "30",
   },
   taskHeader: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "flex-start",
     gap: Spacing.md,
+    flexWrap: "wrap",
+    width: "100%",
   },
   taskTitleRow: {
     flexDirection: "row",
     alignItems: "center",
     flex: 1,
     gap: Spacing.sm,
+    minWidth: 0,
+    maxWidth: "100%",
   },
   priorityIndicator: {
     width: 4,
-    height: 20,
+    height: 24,
     borderRadius: 2,
   },
   statusBadge: {
-    paddingHorizontal: Spacing.sm,
-    paddingVertical: Spacing.xs,
-    borderRadius: BorderRadius.xs,
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.sm,
+    borderRadius: BorderRadius.md,
+    gap: Spacing.xs,
+    borderWidth: 1,
+    flexShrink: 1,
+  },
+  statusDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+  },
+  statusText: {
+    fontWeight: "700",
+    fontSize: 12,
+    letterSpacing: 0.3,
   },
   taskFooter: {
     flexDirection: "row",
@@ -405,20 +618,29 @@ const styles = StyleSheet.create({
     marginTop: Spacing.md,
     paddingTop: Spacing.md,
     borderTopWidth: 1,
-    borderTopColor: "rgba(128, 128, 128, 0.2)",
+    borderTopColor: "#E2E8F0",
+    flexWrap: "wrap",
+    gap: Spacing.sm,
+    width: "100%",
   },
   taskMeta: {
     flexDirection: "row",
     gap: Spacing.lg,
+    flexWrap: "wrap",
+    flex: 1,
+    minWidth: 0,
   },
   taskMetaItem: {
     flexDirection: "row",
     alignItems: "center",
     gap: Spacing.xs,
+    flexShrink: 1,
+    maxWidth: "100%",
   },
   taskIcons: {
     flexDirection: "row",
     gap: Spacing.md,
+    flexShrink: 0,
   },
   iconBadge: {
     flexDirection: "row",
@@ -426,13 +648,57 @@ const styles = StyleSheet.create({
     gap: Spacing.xs,
   },
   emptyState: {
-    padding: Spacing["3xl"],
-    borderRadius: BorderRadius.lg,
+    padding: Platform.select({
+      web: Dimensions.get('window').width > 768 ? Spacing["3xl"] : Spacing["2xl"],
+      default: Spacing["2xl"],
+    }),
+    borderRadius: BorderRadius.xl,
     alignItems: "center",
+    borderWidth: 1.5,
+    borderColor: "#E2E8F0",
+    borderStyle: "dashed",
+    marginHorizontal: Spacing["2xl"],
+    backgroundColor: "#F8FAFC",
+  },
+  emptyIconContainer: {
+    width: 80,
+    height: 80,
+    borderRadius: BorderRadius.xl,
+    backgroundColor: "#F1F5F9",
+    alignItems: "center",
+    justifyContent: "center",
+    marginBottom: Spacing.lg,
+  },
+  emptyTitle: {
+    fontSize: 18,
+    fontWeight: "700",
+    color: "#0F172A",
+    marginBottom: Spacing.xs,
+  },
+  emptySubtitle: {
+    fontSize: 14,
+    color: "#64748B",
+    textAlign: "center",
+    lineHeight: 20,
   },
   loadingContainer: {
     padding: Spacing["3xl"],
     alignItems: "center",
     justifyContent: "center",
+    minHeight: 200,
+  },
+  loadingIconContainer: {
+    width: 64,
+    height: 64,
+    borderRadius: BorderRadius.xl,
+    backgroundColor: Colors.dark.primary + "10",
+    alignItems: "center",
+    justifyContent: "center",
+    marginBottom: Spacing.lg,
+  },
+  loadingText: {
+    color: "#64748B",
+    fontSize: 14,
+    fontWeight: "500",
   },
 });

@@ -58,7 +58,7 @@ export default function HelpScreen() {
               styles.faqCard,
               {
                 backgroundColor: "#FFFFFF",
-                borderColor: "#FFE0CC",
+                borderColor: "#DBEAFE",
                 opacity: pressed ? 0.8 : 1,
               },
             ]}
@@ -68,7 +68,7 @@ export default function HelpScreen() {
               <Feather
                 name={expandedIndex === index ? "chevron-up" : "chevron-down"}
                 size={20}
-                color="#FFB380"
+                color="#2563EB"
               />
             </View>
             {expandedIndex === index && (
@@ -121,7 +121,7 @@ const styles = StyleSheet.create({
     marginTop: Spacing.md,
     paddingTop: Spacing.md,
     borderTopWidth: 1,
-    borderTopColor: "#FFE0CC",
+    borderTopColor: "#DBEAFE",
   },
   answerText: {
     fontSize: 14,
