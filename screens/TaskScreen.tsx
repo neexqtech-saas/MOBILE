@@ -1,5 +1,13 @@
-import React, { useState, useEffect } from "react";
-import { View, StyleSheet, Pressable, ActivityIndicator, Platform, Dimensions } from "react-native";
+import React, { useState, useEffect, useMemo } from "react";
+import {
+  View,
+  StyleSheet,
+  Pressable,
+  ActivityIndicator,
+  Platform,
+  ScrollView,
+  useWindowDimensions,
+} from "react-native";
 import { Feather } from "@expo/vector-icons";
 import { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { useNavigation } from "@react-navigation/native";
@@ -13,6 +21,7 @@ import { useHRMSStore, Task } from "@/store/hrmsStore";
 import { TaskStackParamList } from "@/navigation/TaskStackNavigator";
 import Spacer from "@/components/Spacer";
 import { RefreshButton } from "@/components/RefreshButton";
+import { getCurrentMonthDates } from "@/utils/dateHelpers";
 
 type TaskScreenNavigationProp = NativeStackNavigationProp<
   TaskStackParamList,
@@ -24,8 +33,34 @@ type Filter = (typeof FILTERS)[number];
 
 export default function TaskScreen() {
   const navigation = useNavigation<TaskScreenNavigationProp>();
-  const { theme } = useTheme();
+  const { theme, isDark } = useTheme();
   const { tasks, fetchTasks } = useHRMSStore();
+  const { width } = useWindowDimensions();
+
+  const layout = useMemo(() => {
+    const compact = width < 392;
+    const wide = width >= 560;
+    return {
+      compact,
+      wide,
+      screenHPad: wide ? Spacing.xl : compact ? Spacing.sm + 2 : Spacing.md,
+      sectionGap: compact ? Spacing.sm : Spacing.md,
+      cardPad: compact ? 10 : 12,
+      cardRadius: BorderRadius.lg,
+      titleFs: compact ? 13.5 : 14.5,
+      metaFs: compact ? 11 : 12,
+      iconSm: compact ? 11 : 12,
+      iconMd: compact ? 13 : 14,
+      statMinH: compact ? 72 : 84,
+      statValueFs: compact ? 18 : wide ? 24 : 21,
+      statLabelFs: compact ? 9 : 10,
+      statIconBox: compact ? 30 : 34,
+      statCardPad: compact ? 8 : 10,
+      filterFs: compact ? 10 : 11,
+      filterPadV: compact ? 5 : 7,
+      filterMinH: compact ? 30 : 34,
+    };
+  }, [width]);
 
   const [activeFilter, setActiveFilter] = useState<Filter>("All");
   const [isLoading, setIsLoading] = useState(false);
@@ -34,7 +69,8 @@ export default function TaskScreen() {
   useEffect(() => {
     const loadTasks = async () => {
       setIsLoading(true);
-      const result = await fetchTasks();
+      const { from, to } = getCurrentMonthDates();
+      const result = await fetchTasks(from, to);
       setIsLoading(false);
       if (!result.success) {
         console.error('Failed to fetch tasks:', result.error);
@@ -144,9 +180,11 @@ export default function TaskScreen() {
         style={({ pressed }) => [
           styles.taskCard,
           { 
-            backgroundColor: isPending ? Colors.dark.primary + "08" : "#FFFFFF",
+            backgroundColor: isPending ? Colors.dark.primary + "08" : theme.cardBackground,
             borderWidth: isPending ? 2 : 1,
-            borderColor: isPending ? Colors.dark.primary : "#E2E8F0",
+            borderColor: isPending ? Colors.dark.primary : theme.border,
+            borderRadius: layout.cardRadius,
+            padding: layout.cardPad,
             opacity: pressed ? 0.9 : 1,
             ...Platform.select({
               ios: {
@@ -168,9 +206,9 @@ export default function TaskScreen() {
         ]}
       >
         {isPending && (
-          <View style={styles.pendingBadge}>
-            <Feather name="clock" size={12} color={Colors.dark.primary} />
-            <ThemedText type="small" style={{ color: Colors.dark.primary, fontWeight: "700", marginLeft: Spacing.xs }}>
+          <View style={[styles.pendingBadge, { paddingVertical: 3, paddingHorizontal: Spacing.sm }]}>
+            <Feather name="clock" size={layout.iconSm} color={Colors.dark.primary} />
+            <ThemedText style={{ color: Colors.dark.primary, fontWeight: "700", marginLeft: 4, fontSize: layout.metaFs }}>
               PENDING
             </ThemedText>
           </View>
@@ -180,13 +218,17 @@ export default function TaskScreen() {
             <View
               style={[
                 styles.priorityIndicator,
-                { backgroundColor: priorityColor },
+                { backgroundColor: priorityColor, height: layout.compact ? 18 : 22 },
               ]}
             />
             <ThemedText
-              type="body"
-              style={{ fontWeight: isPending ? "700" : "600", flex: 1, color: isPending ? Colors.dark.primary : theme.text }}
-              numberOfLines={1}
+              style={{
+                fontWeight: isPending ? "700" : "600",
+                flex: 1,
+                fontSize: layout.titleFs,
+                color: isPending ? Colors.dark.primary : theme.text,
+              }}
+              numberOfLines={2}
               ellipsizeMode="tail"
             >
               {task.title}
@@ -195,38 +237,38 @@ export default function TaskScreen() {
           <View
             style={[
               styles.statusBadge,
-              { backgroundColor: statusColor + "15", borderColor: statusColor + "40" },
+              {
+                backgroundColor: statusColor + "15",
+                borderColor: statusColor + "40",
+                paddingVertical: 3,
+                paddingHorizontal: 8,
+              },
             ]}
           >
             <View style={[styles.statusDot, { backgroundColor: statusColor }]} />
-            <ThemedText
-              type="small"
-              style={[styles.statusText, { color: statusColor }]}
-            >
+            <ThemedText style={[styles.statusText, { color: statusColor, fontSize: layout.metaFs }]}>
               {getStatusLabel(task.status)}
             </ThemedText>
           </View>
         </View>
 
         <ThemedText
-          type="small"
-          style={{ color: theme.textMuted, marginTop: Spacing.sm }}
+          style={{ color: theme.textMuted, marginTop: Spacing.xs, fontSize: layout.metaFs, lineHeight: layout.metaFs + 4 }}
           numberOfLines={2}
         >
           {task.description}
         </ThemedText>
 
-        <View style={styles.taskFooter}>
+        <View style={[styles.taskFooter, { borderTopColor: theme.border, marginTop: Spacing.sm, paddingTop: Spacing.sm }]}>
           <View style={styles.taskMeta}>
             <View style={styles.taskMetaItem}>
               <Feather
                 name="calendar"
-                size={14}
+                size={layout.iconMd}
                 color={overdue ? Colors.dark.error : theme.textMuted}
               />
               <ThemedText
-                type="small"
-                style={{ color: overdue ? Colors.dark.error : theme.textMuted }}
+                style={{ fontSize: layout.metaFs, color: overdue ? Colors.dark.error : theme.textMuted }}
                 numberOfLines={1}
                 ellipsizeMode="tail"
               >
@@ -235,10 +277,9 @@ export default function TaskScreen() {
               </ThemedText>
             </View>
             <View style={styles.taskMetaItem}>
-              <Feather name="user" size={14} color={theme.textMuted} />
-              <ThemedText 
-                type="small" 
-                style={{ color: theme.textMuted }}
+              <Feather name="user" size={layout.iconMd} color={theme.textMuted} />
+              <ThemedText
+                style={{ fontSize: layout.metaFs, color: theme.textMuted }}
                 numberOfLines={1}
                 ellipsizeMode="tail"
               >
@@ -248,25 +289,23 @@ export default function TaskScreen() {
             {task.status === "completed" && task.startTime && task.endTime && (
               <>
                 <View style={styles.taskMetaItem}>
-                  <Feather name="play-circle" size={14} color={Colors.dark.success} />
-                  <ThemedText 
-                    type="small" 
-                    style={{ color: Colors.dark.success }}
+                  <Feather name="play-circle" size={layout.iconMd} color={Colors.dark.success} />
+                  <ThemedText
+                    style={{ fontSize: layout.metaFs, color: Colors.dark.success }}
                     numberOfLines={1}
                     ellipsizeMode="tail"
                   >
-                    Start: {formatTime(task.startTime)}
+                    {formatTime(task.startTime)}
                   </ThemedText>
                 </View>
                 <View style={styles.taskMetaItem}>
-                  <Feather name="stop-circle" size={14} color={Colors.dark.success} />
-                  <ThemedText 
-                    type="small" 
-                    style={{ color: Colors.dark.success }}
+                  <Feather name="stop-circle" size={layout.iconMd} color={Colors.dark.success} />
+                  <ThemedText
+                    style={{ fontSize: layout.metaFs, color: Colors.dark.success }}
                     numberOfLines={1}
                     ellipsizeMode="tail"
                   >
-                    End: {formatTime(task.endTime)}
+                    {formatTime(task.endTime)}
                   </ThemedText>
                 </View>
               </>
@@ -275,18 +314,14 @@ export default function TaskScreen() {
           <View style={styles.taskIcons}>
             {task.attachments > 0 ? (
               <View style={styles.iconBadge}>
-                <Feather name="paperclip" size={14} color={theme.textMuted} />
-                <ThemedText type="small" style={{ color: theme.textMuted }}>
-                  {task.attachments}
-                </ThemedText>
+                <Feather name="paperclip" size={layout.iconMd} color={theme.textMuted} />
+                <ThemedText style={{ color: theme.textMuted, fontSize: layout.metaFs }}>{task.attachments}</ThemedText>
               </View>
             ) : null}
             {task.comments.length > 0 ? (
               <View style={styles.iconBadge}>
-                <Feather name="message-square" size={14} color={theme.textMuted} />
-                <ThemedText type="small" style={{ color: theme.textMuted }}>
-                  {task.comments.length}
-                </ThemedText>
+                <Feather name="message-square" size={layout.iconMd} color={theme.textMuted} />
+                <ThemedText style={{ color: theme.textMuted, fontSize: layout.metaFs }}>{task.comments.length}</ThemedText>
               </View>
             ) : null}
           </View>
@@ -303,7 +338,8 @@ export default function TaskScreen() {
 
   const handleRefresh = async () => {
     setIsLoading(true);
-    const result = await fetchTasks();
+    const { from, to } = getCurrentMonthDates();
+    const result = await fetchTasks(from, to);
     setIsLoading(false);
     if (!result.success) {
       console.error('Failed to fetch tasks:', result.error);
@@ -311,64 +347,138 @@ export default function TaskScreen() {
   };
 
   return (
-    <ScreenScrollView>
-      <View style={styles.refreshHeader}>
-        <View style={{ flex: 1 }} />
+    <ScreenScrollView contentContainerStyle={{ paddingBottom: Spacing["2xl"] }}>
+      <View style={[styles.refreshHeader, { paddingHorizontal: layout.screenHPad }]}>
+        <View style={{ flex: 1, minWidth: 0, paddingRight: Spacing.sm }}>
+          <ThemedText
+            style={[styles.pageSubtitle, { color: theme.textMuted, fontSize: layout.metaFs + 1.5 }]}
+            numberOfLines={2}
+          >
+            Track and complete assignments for the current month.
+          </ThemedText>
+        </View>
         <RefreshButton
           onPress={handleRefresh}
           isLoading={isLoading}
           label="Refresh"
         />
       </View>
-      <Spacer height={Spacing.lg} />
-      <View style={styles.header}>
-        <View style={styles.titleContainer}>
-          <View style={styles.titleIconContainer}>
-            <Feather name="check-square" size={22} color={Colors.dark.primary} />
+      <Spacer height={layout.sectionGap} />
+      <View style={[styles.statsRow, { paddingHorizontal: layout.screenHPad, gap: layout.compact ? 6 : Spacing.sm }]}>
+        <View
+          style={[
+            styles.statCard,
+            {
+              backgroundColor: Colors.dark.pending + (isDark ? "22" : "15"),
+              borderColor: Colors.dark.pending + (isDark ? "45" : "30"),
+              padding: layout.statCardPad,
+              minHeight: layout.statMinH,
+              borderRadius: layout.cardRadius,
+            },
+          ]}
+        >
+          <View
+            style={[
+              styles.statIconContainer,
+              {
+                backgroundColor: Colors.dark.pending + "20",
+                width: layout.statIconBox,
+                height: layout.statIconBox,
+                marginBottom: Spacing.xs,
+              },
+            ]}
+          >
+            <Feather name="clock" size={layout.compact ? 16 : 18} color={Colors.dark.pending} />
           </View>
-          <ThemedText type="h4" style={styles.title}>My Tasks</ThemedText>
-        </View>
-      </View>
-      <Spacer height={Spacing.lg} />
-      <View style={styles.statsRow}>
-        <View style={[styles.statCard, { backgroundColor: Colors.dark.pending + "15", borderColor: Colors.dark.pending + "30" }]}>
-          <View style={[styles.statIconContainer, { backgroundColor: Colors.dark.pending + "20" }]}>
-            <Feather name="clock" size={20} color={Colors.dark.pending} />
-          </View>
-          <ThemedText type="h3" style={[styles.statValue, { color: Colors.dark.pending }]}>
+          <ThemedText style={[styles.statValue, { color: Colors.dark.pending, fontSize: layout.statValueFs }]}>
             {taskCounts.pending}
           </ThemedText>
-          <ThemedText type="small" style={[styles.statLabel, { color: Colors.dark.pending }]}>
+          <ThemedText
+            style={[styles.statLabel, { color: Colors.dark.pending, fontSize: layout.statLabelFs }]}
+            numberOfLines={2}
+          >
             Pending
           </ThemedText>
         </View>
-        <View style={[styles.statCard, { backgroundColor: Colors.dark.primary + "15", borderColor: Colors.dark.primary + "30" }]}>
-          <View style={[styles.statIconContainer, { backgroundColor: Colors.dark.primary + "20" }]}>
-            <Feather name="play-circle" size={20} color={Colors.dark.primary} />
+        <View
+          style={[
+            styles.statCard,
+            {
+              backgroundColor: Colors.dark.primary + (isDark ? "22" : "15"),
+              borderColor: Colors.dark.primary + (isDark ? "45" : "30"),
+              padding: layout.statCardPad,
+              minHeight: layout.statMinH,
+              borderRadius: layout.cardRadius,
+            },
+          ]}
+        >
+          <View
+            style={[
+              styles.statIconContainer,
+              {
+                backgroundColor: Colors.dark.primary + "20",
+                width: layout.statIconBox,
+                height: layout.statIconBox,
+                marginBottom: Spacing.xs,
+              },
+            ]}
+          >
+            <Feather name="play-circle" size={layout.compact ? 16 : 18} color={Colors.dark.primary} />
           </View>
-          <ThemedText type="h3" style={[styles.statValue, { color: Colors.dark.primary }]}>
+          <ThemedText style={[styles.statValue, { color: Colors.dark.primary, fontSize: layout.statValueFs }]}>
             {taskCounts.inProgress}
           </ThemedText>
-          <ThemedText type="small" style={[styles.statLabel, { color: Colors.dark.primary }]}>
-            In Progress
+          <ThemedText
+            style={[styles.statLabel, { color: Colors.dark.primary, fontSize: layout.statLabelFs }]}
+            numberOfLines={2}
+          >
+            {layout.compact ? "Active" : "In Progress"}
           </ThemedText>
         </View>
-        <View style={[styles.statCard, { backgroundColor: Colors.dark.success + "15", borderColor: Colors.dark.success + "30" }]}>
-          <View style={[styles.statIconContainer, { backgroundColor: Colors.dark.success + "20" }]}>
-            <Feather name="check-circle" size={20} color={Colors.dark.success} />
+        <View
+          style={[
+            styles.statCard,
+            {
+              backgroundColor: Colors.dark.success + (isDark ? "22" : "15"),
+              borderColor: Colors.dark.success + (isDark ? "45" : "30"),
+              padding: layout.statCardPad,
+              minHeight: layout.statMinH,
+              borderRadius: layout.cardRadius,
+            },
+          ]}
+        >
+          <View
+            style={[
+              styles.statIconContainer,
+              {
+                backgroundColor: Colors.dark.success + "20",
+                width: layout.statIconBox,
+                height: layout.statIconBox,
+                marginBottom: Spacing.xs,
+              },
+            ]}
+          >
+            <Feather name="check-circle" size={layout.compact ? 16 : 18} color={Colors.dark.success} />
           </View>
-          <ThemedText type="h3" style={[styles.statValue, { color: Colors.dark.success }]}>
+          <ThemedText style={[styles.statValue, { color: Colors.dark.success, fontSize: layout.statValueFs }]}>
             {taskCounts.completed}
           </ThemedText>
-          <ThemedText type="small" style={[styles.statLabel, { color: Colors.dark.success }]}>
-            Completed
+          <ThemedText
+            style={[styles.statLabel, { color: Colors.dark.success, fontSize: layout.statLabelFs }]}
+            numberOfLines={2}
+          >
+            {layout.compact ? "Done" : "Completed"}
           </ThemedText>
         </View>
       </View>
 
-      <Spacer height={Spacing.xl} />
+      <Spacer height={layout.sectionGap} />
 
-      <View style={styles.filterRow}>
+      <ScrollView
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        contentContainerStyle={[styles.filterScrollInner, { paddingHorizontal: layout.screenHPad }]}
+      >
         {FILTERS.map((filter) => (
           <Pressable
             key={filter}
@@ -379,58 +489,74 @@ export default function TaskScreen() {
             style={({ pressed }) => [
               styles.filterChip,
               {
+                minHeight: layout.filterMinH,
+                paddingVertical: layout.filterPadV,
+                paddingHorizontal: layout.compact ? Spacing.sm : Spacing.md,
                 backgroundColor:
-                  activeFilter === filter
-                    ? Colors.dark.primary
-                    : theme.backgroundDefault,
-                borderColor: activeFilter === filter ? Colors.dark.primary : "#E2E8F0",
-                opacity: pressed ? 0.8 : 1,
+                  activeFilter === filter ? Colors.dark.primary : theme.cardBackground,
+                borderColor: activeFilter === filter ? Colors.dark.primary : theme.border,
+                opacity: pressed ? 0.85 : 1,
+                borderWidth: 1,
               },
             ]}
           >
             <ThemedText
-              type="small"
-              style={[
-                styles.filterText,
-                {
-                  color: activeFilter === filter ? "#FFFFFF" : theme.text,
-                  fontWeight: activeFilter === filter ? "700" : "600",
-                },
-              ]}
+              style={{
+                color: activeFilter === filter ? "#FFFFFF" : theme.text,
+                fontWeight: activeFilter === filter ? "700" : "600",
+                fontSize: layout.filterFs,
+              }}
             >
               {filter}
             </ThemedText>
           </Pressable>
         ))}
+      </ScrollView>
+
+      <View style={{ paddingHorizontal: layout.screenHPad, marginTop: Spacing.sm }}>
+        <ThemedText style={[styles.rangeHint, { color: theme.textMuted, fontSize: layout.metaFs }]}>
+          Showing tasks for this month
+        </ThemedText>
       </View>
 
-      <Spacer height={Spacing.xl} />
+      <Spacer height={layout.sectionGap} />
 
       {isLoading ? (
-        <View style={styles.loadingContainer}>
-          <View style={styles.loadingIconContainer}>
+        <View style={[styles.loadingContainer, { paddingHorizontal: layout.screenHPad }]}>
+          <View style={[styles.loadingIconContainer, { width: 48, height: 48, marginBottom: Spacing.md }]}>
             <ActivityIndicator size="large" color={Colors.dark.primary} />
           </View>
-          <ThemedText style={styles.loadingText}>
+          <ThemedText style={[styles.loadingText, { color: theme.textMuted, fontSize: layout.metaFs }]}>
             Loading tasks...
           </ThemedText>
         </View>
       ) : filteredTasks.length === 0 ? (
-        <View style={styles.emptyState}>
-          <View style={styles.emptyIconContainer}>
-            <Feather name="check-square" size={56} color={theme.textMuted} />
+        <View
+          style={[
+            styles.emptyState,
+            {
+              marginHorizontal: layout.screenHPad,
+              backgroundColor: theme.backgroundDefault,
+              borderColor: theme.border,
+            },
+          ]}
+        >
+          <View style={[styles.emptyIconContainer, { backgroundColor: theme.backgroundSecondary }]}>
+            <Feather name="check-square" size={layout.compact ? 40 : 48} color={theme.textMuted} />
           </View>
-          <ThemedText style={styles.emptyTitle}>No Tasks Found</ThemedText>
-          <ThemedText style={styles.emptySubtitle}>
+          <ThemedText style={[styles.emptyTitle, { color: theme.text, fontSize: layout.compact ? 15 : 16 }]}>
+            No tasks found
+          </ThemedText>
+          <ThemedText style={[styles.emptySubtitle, { color: theme.textMuted, fontSize: layout.metaFs }]}>
             {activeFilter === "All" ? "No tasks available" : `No ${activeFilter.toLowerCase()} tasks`}
           </ThemedText>
         </View>
       ) : (
-        filteredTasks.map((task) => (
-          <View key={task.id} style={{ marginBottom: Spacing.md }}>
-            {renderTaskCard(task)}
-          </View>
-        ))
+        <View style={{ paddingHorizontal: layout.screenHPad, gap: layout.sectionGap }}>
+          {filteredTasks.map((task) => (
+            <View key={task.id}>{renderTaskCard(task)}</View>
+          ))}
+        </View>
       )}
 
       <Spacer height={Spacing["2xl"]} />
@@ -441,57 +567,29 @@ export default function TaskScreen() {
 const styles = StyleSheet.create({
   refreshHeader: {
     flexDirection: "row",
-    justifyContent: "flex-end",
     alignItems: "center",
-    paddingHorizontal: Spacing["2xl"],
+    justifyContent: "space-between",
     paddingTop: Spacing.md,
-    paddingBottom: Spacing.md,
+    paddingBottom: Spacing.sm,
+    gap: Spacing.md,
   },
-  header: {
-    paddingHorizontal: Spacing["2xl"],
-  },
-  titleContainer: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: Spacing.sm,
-  },
-  titleIconContainer: {
-    width: 36,
-    height: 36,
-    borderRadius: BorderRadius.md,
-    backgroundColor: Colors.dark.primary + "15",
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  title: {
-    fontSize: Platform.select({
-      web: Dimensions.get('window').width > 768 ? 24 : 20,
-      default: 20,
-    }),
-    fontWeight: "700",
-    color: "#0F172A",
-    letterSpacing: -0.3,
+  pageSubtitle: {
+    fontSize: 13,
+    fontWeight: "500",
+    lineHeight: 18,
+    letterSpacing: -0.1,
   },
   statsRow: {
     flexDirection: "row",
-    gap: Spacing.md,
-    paddingHorizontal: Spacing["2xl"],
+    gap: Spacing.sm,
     alignItems: "stretch",
   },
   statCard: {
     flex: 1,
-    padding: Platform.select({
-      web: Dimensions.get('window').width > 768 ? Spacing.xl : Spacing.lg,
-      default: Spacing.lg,
-    }),
-    borderRadius: BorderRadius.xl,
+    minWidth: 0,
     alignItems: "center",
     justifyContent: "center",
     borderWidth: 1,
-    minHeight: Platform.select({
-      web: Dimensions.get('window').width > 768 ? 140 : 120,
-      default: 120,
-    }),
     ...Platform.select({
       ios: {
         shadowColor: "#000",
@@ -508,66 +606,51 @@ const styles = StyleSheet.create({
     }),
   },
   statIconContainer: {
-    width: 40,
-    height: 40,
     borderRadius: BorderRadius.md,
     alignItems: "center",
     justifyContent: "center",
-    marginBottom: Spacing.md,
   },
   statValue: {
-    fontSize: Platform.select({
-      web: Dimensions.get('window').width > 768 ? 32 : 28,
-      default: 28,
-    }),
     fontWeight: "800",
-    marginBottom: Spacing.sm,
-    letterSpacing: -0.5,
+    marginBottom: Spacing.xs,
+    letterSpacing: -0.45,
     textAlign: "center",
   },
   statLabel: {
     fontWeight: "700",
-    fontSize: 12,
     textTransform: "uppercase",
-    letterSpacing: 0.5,
+    letterSpacing: 0.45,
     textAlign: "center",
+    lineHeight: 16,
   },
-  filterRow: {
+  filterScrollInner: {
     flexDirection: "row",
+    alignItems: "center",
     gap: Spacing.sm,
-    paddingHorizontal: Spacing["2xl"],
-    flexWrap: "wrap",
+    paddingBottom: Spacing.xs,
+  },
+  rangeHint: {
+    fontSize: 12,
+    fontWeight: "600",
+    letterSpacing: 0.15,
   },
   filterChip: {
-    paddingHorizontal: Spacing.lg,
-    paddingVertical: Spacing.sm,
     borderRadius: BorderRadius.full,
-    borderWidth: 1.5,
-    minHeight: 36,
+    alignItems: "center",
+    justifyContent: "center",
   },
   filterText: {
-    fontSize: 13,
-    letterSpacing: 0.2,
+    letterSpacing: 0.15,
   },
-  taskCard: {
-    padding: Platform.select({
-      web: Dimensions.get('window').width > 768 ? Spacing.xl : Spacing.lg,
-      default: Spacing.lg,
-    }),
-    borderRadius: BorderRadius.xl,
-    marginBottom: Spacing.md,
-    marginHorizontal: Spacing["2xl"],
-  },
+  taskCard: {},
   pendingBadge: {
     flexDirection: "row",
     alignItems: "center",
     alignSelf: "flex-start",
-    paddingHorizontal: Spacing.md,
-    paddingVertical: Spacing.xs,
     borderRadius: BorderRadius.full,
     backgroundColor: Colors.dark.primary + "15",
-    marginBottom: Spacing.sm,
-    borderWidth: 1,
+    marginBottom: Spacing.xs,
+    borderWidth: StyleSheet.hairlineWidth,
     borderColor: Colors.dark.primary + "30",
   },
   taskHeader: {
@@ -594,38 +677,32 @@ const styles = StyleSheet.create({
   statusBadge: {
     flexDirection: "row",
     alignItems: "center",
-    paddingHorizontal: Spacing.md,
-    paddingVertical: Spacing.sm,
-    borderRadius: BorderRadius.md,
-    gap: Spacing.xs,
-    borderWidth: 1,
+    borderRadius: BorderRadius.sm,
+    gap: 5,
+    borderWidth: StyleSheet.hairlineWidth,
     flexShrink: 1,
   },
   statusDot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
+    width: 6,
+    height: 6,
+    borderRadius: 3,
   },
   statusText: {
     fontWeight: "700",
-    fontSize: 12,
-    letterSpacing: 0.3,
+    letterSpacing: 0.2,
   },
   taskFooter: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
-    marginTop: Spacing.md,
-    paddingTop: Spacing.md,
-    borderTopWidth: 1,
-    borderTopColor: "#E2E8F0",
+    borderTopWidth: StyleSheet.hairlineWidth,
     flexWrap: "wrap",
     gap: Spacing.sm,
     width: "100%",
   },
   taskMeta: {
     flexDirection: "row",
-    gap: Spacing.lg,
+    gap: Spacing.sm,
     flexWrap: "wrap",
     flex: 1,
     minWidth: 0,
@@ -648,57 +725,45 @@ const styles = StyleSheet.create({
     gap: Spacing.xs,
   },
   emptyState: {
-    padding: Platform.select({
-      web: Dimensions.get('window').width > 768 ? Spacing["3xl"] : Spacing["2xl"],
-      default: Spacing["2xl"],
-    }),
-    borderRadius: BorderRadius.xl,
+    padding: Spacing.lg,
+    borderRadius: BorderRadius.lg,
     alignItems: "center",
-    borderWidth: 1.5,
-    borderColor: "#E2E8F0",
+    borderWidth: 1,
     borderStyle: "dashed",
-    marginHorizontal: Spacing["2xl"],
-    backgroundColor: "#F8FAFC",
+    minHeight: 200,
   },
   emptyIconContainer: {
-    width: 80,
-    height: 80,
-    borderRadius: BorderRadius.xl,
-    backgroundColor: "#F1F5F9",
+    width: 64,
+    height: 64,
+    borderRadius: BorderRadius.lg,
     alignItems: "center",
     justifyContent: "center",
-    marginBottom: Spacing.lg,
+    marginBottom: Spacing.md,
   },
   emptyTitle: {
-    fontSize: 18,
     fontWeight: "700",
-    color: "#0F172A",
+    letterSpacing: -0.2,
     marginBottom: Spacing.xs,
   },
   emptySubtitle: {
-    fontSize: 14,
-    color: "#64748B",
     textAlign: "center",
-    lineHeight: 20,
+    lineHeight: 18,
+    maxWidth: 280,
+    paddingHorizontal: Spacing.sm,
   },
   loadingContainer: {
-    padding: Spacing["3xl"],
+    padding: Spacing.lg,
     alignItems: "center",
     justifyContent: "center",
-    minHeight: 200,
+    minHeight: 140,
   },
   loadingIconContainer: {
-    width: 64,
-    height: 64,
-    borderRadius: BorderRadius.xl,
+    borderRadius: BorderRadius.lg,
     backgroundColor: Colors.dark.primary + "10",
     alignItems: "center",
     justifyContent: "center",
-    marginBottom: Spacing.lg,
   },
   loadingText: {
-    color: "#64748B",
-    fontSize: 14,
     fontWeight: "500",
   },
 });

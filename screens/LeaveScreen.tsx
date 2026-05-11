@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from "react";
-import { View, StyleSheet, Pressable, ActivityIndicator, Platform, Dimensions } from "react-native";
+import React, { useState, useEffect, useMemo } from "react";
+import { View, StyleSheet, Pressable, ActivityIndicator, Platform, useWindowDimensions } from "react-native";
 import { Feather } from "@expo/vector-icons";
 import { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { useNavigation, useFocusEffect } from "@react-navigation/native";
@@ -68,7 +68,31 @@ const getDayTypeText = (dayType?: string): string => {
 export default function LeaveScreen() {
   const navigation = useNavigation<LeaveScreenNavigationProp>();
   const { theme } = useTheme();
+  const { width } = useWindowDimensions();
   const { employee } = useHRMSStore();
+
+  const layout = useMemo(() => {
+    const compact = width < 392;
+    const wide = width >= 560;
+    return {
+      compact,
+      wide,
+      screenHPad: wide ? Spacing.xl : compact ? Spacing.sm + 2 : Spacing.md,
+      screenVPad: compact ? Spacing.md : Spacing.lg,
+      cardPad: compact ? 10 : 12,
+      cardRadius: BorderRadius.lg,
+      sectionGap: compact ? Spacing.sm : Spacing.md,
+      titleFs: compact ? 15 : 17,
+      metaFs: compact ? 11 : 12,
+      iconBox: compact ? 36 : 40,
+      iconInner: compact ? 17 : 19,
+      balanceNumFs: compact ? 18 : 22,
+      appTitleFs: compact ? 14 : 15,
+      headerIcon: compact ? 30 : 34,
+      iconSm: compact ? 11 : 12,
+      iconMd: compact ? 13 : 14,
+    };
+  }, [width]);
   
   const [leaveBalances, setLeaveBalances] = useState<LeaveBalanceAPI[]>([]);
   const [leaveApplications, setLeaveApplications] = useState<LeaveApplicationAPI[]>([]);
@@ -185,11 +209,11 @@ export default function LeaveScreen() {
   if (isLoading) {
     return (
       <ScreenScrollView>
-        <View style={styles.loadingContainer}>
-          <View style={styles.loadingIconContainer}>
+        <View style={[styles.loadingContainer, { paddingHorizontal: layout.screenHPad }]}>
+          <View style={[styles.loadingIconContainer, { width: 48, height: 48, marginBottom: Spacing.md }]}>
             <ActivityIndicator size="large" color={Colors.dark.primary} />
           </View>
-          <ThemedText style={styles.loadingText}>
+          <ThemedText style={[styles.loadingText, { fontSize: layout.metaFs, color: theme.textMuted }]}>
             Loading leave balances...
           </ThemedText>
         </View>
@@ -199,6 +223,7 @@ export default function LeaveScreen() {
 
   return (
     <ScreenScrollView>
+      <View style={{ paddingHorizontal: layout.screenHPad, paddingTop: layout.screenVPad }}>
       <View style={styles.refreshHeader}>
         <View style={{ flex: 1 }} />
         <RefreshButton
@@ -207,20 +232,19 @@ export default function LeaveScreen() {
           label="Refresh"
         />
       </View>
-      <Spacer height={Spacing.md} />
-      <View style={styles.header}>
+      <Spacer height={layout.sectionGap} />
+      <View style={[styles.header, { paddingHorizontal: 0 }]}>
         <View style={styles.headerLeft}>
           <View style={styles.titleContainer}>
-            <View style={styles.titleIconContainer}>
-              <Feather name="calendar" size={22} color={Colors.dark.primary} />
+            <View style={[styles.titleIconContainer, { width: layout.headerIcon, height: layout.headerIcon }]}>
+              <Feather name="calendar" size={layout.iconInner} color={Colors.dark.primary} />
             </View>
-            <ThemedText type="h4" style={styles.title}>Leave Balance</ThemedText>
+            <ThemedText style={[styles.title, { fontSize: layout.titleFs, color: theme.text }]}>Leave Balance</ThemedText>
           </View>
         </View>
         {leaveBalances.length > 0 && (
           <Pressable
             onPress={() => {
-              // Navigate to ApplyLeave with first available leave type
               const firstLeaveType = leaveBalances[0];
               navigation.navigate("ApplyLeave", {
                 leaveTypeId: firstLeaveType.leave_type,
@@ -229,38 +253,39 @@ export default function LeaveScreen() {
             }}
             style={({ pressed }) => [
               styles.addButton,
+              { borderRadius: layout.cardRadius, minHeight: layout.compact ? 38 : 42 },
               pressed && styles.addButtonPressed,
             ]}
           >
-            <View style={styles.addButtonContent}>
-              <Feather name="plus-circle" size={18} color="#FFFFFF" />
-              <ThemedText style={styles.addButtonText}>Apply Leave</ThemedText>
+            <View style={[styles.addButtonContent, { paddingVertical: Spacing.sm, paddingHorizontal: Spacing.md }]}>
+              <Feather name="plus-circle" size={layout.iconInner} color="#FFFFFF" />
+              <ThemedText style={[styles.addButtonText, { fontSize: layout.metaFs + 1.5 }]}>Apply Leave</ThemedText>
             </View>
           </Pressable>
         )}
       </View>
 
-      <Spacer height={Spacing.xl} />
+      <Spacer height={layout.sectionGap} />
 
       {error ? (
-        <View style={styles.errorContainer}>
+        <View style={[styles.errorContainer, { borderColor: theme.border, marginHorizontal: 0 }]}>
           <View style={styles.errorIconContainer}>
             <Feather name="alert-circle" size={20} color="#F44336" />
           </View>
           <View style={styles.errorTextContainer}>
             <ThemedText style={styles.errorTitle}>Error</ThemedText>
-            <ThemedText style={styles.errorText}>
+            <ThemedText style={[styles.errorText, { fontSize: layout.metaFs }]}>
               {error}
             </ThemedText>
           </View>
         </View>
       ) : leaveBalances.length === 0 ? (
-        <View style={styles.emptyState}>
-          <View style={styles.emptyIconContainer}>
-            <Feather name="calendar" size={56} color={theme.textMuted} />
+        <View style={[styles.emptyState, { borderColor: theme.border, backgroundColor: theme.backgroundDefault, marginHorizontal: 0 }]}>
+          <View style={[styles.emptyIconContainer, { backgroundColor: theme.backgroundSecondary }]}>
+            <Feather name="calendar" size={layout.compact ? 40 : 48} color={theme.textMuted} />
           </View>
-          <ThemedText style={styles.emptyTitle}>No Leave Balances</ThemedText>
-          <ThemedText style={styles.emptySubtitle}>
+          <ThemedText style={[styles.emptyTitle, { color: theme.text, fontSize: layout.compact ? 15 : 16 }]}>No Leave Balances</ThemedText>
+          <ThemedText style={[styles.emptySubtitle, { color: theme.textMuted, fontSize: layout.metaFs }]}>
             Your leave balances will appear here once assigned
           </ThemedText>
         </View>
@@ -275,59 +300,73 @@ export default function LeaveScreen() {
             style={({ pressed }) => [
               styles.balanceCard,
               {
-                backgroundColor: "#FFFFFF",
-                borderColor: "#DBEAFE",
-                opacity: pressed ? 0.8 : 1,
+                padding: layout.cardPad,
+                borderRadius: layout.cardRadius,
+                backgroundColor: theme.cardBackground,
+                borderColor: theme.border,
+                marginHorizontal: 0,
+                marginBottom: layout.sectionGap,
+                opacity: pressed ? 0.88 : 1,
               },
             ]}
-      >
-            <View style={styles.balanceCardHeader}>
+          >
+            <View style={[styles.balanceCardHeader, { marginBottom: Spacing.sm, gap: Spacing.sm }]}>
               <View style={styles.iconContainer}>
-                <View style={styles.iconBackground}>
+                <View
+                  style={[
+                    styles.iconBackground,
+                    {
+                      width: layout.iconBox,
+                      height: layout.iconBox,
+                      backgroundColor: Colors.dark.primary + "10",
+                      borderColor: Colors.dark.primary + "22",
+                    },
+                  ]}
+                >
                   <Feather
                     name={getLeaveIcon(balance.leave_type_code || '')}
-                    size={22}
+                    size={layout.iconInner}
                     color={Colors.dark.primary}
                   />
                 </View>
               </View>
               <View style={styles.balanceInfo}>
-                <ThemedText style={styles.leaveTypeName}>
+                <ThemedText style={[styles.leaveTypeName, { fontSize: layout.appTitleFs, color: theme.text }]}>
                   {balance.leave_type_name || 'Leave'}
                 </ThemedText>
-                <View style={styles.yearBadge}>
-                  <Feather name="calendar" size={12} color={theme.textMuted} />
-                  <ThemedText type="small" style={styles.yearText}>
+                <View style={[styles.yearBadge, { backgroundColor: theme.backgroundSecondary }]}>
+                  <Feather name="calendar" size={layout.iconSm} color={theme.textMuted} />
+                  <ThemedText style={[styles.yearText, { color: theme.textMuted }]}>
                     {balance.year}
                   </ThemedText>
                 </View>
               </View>
             </View>
-            <View style={styles.balanceDetails}>
+            <View style={[styles.balanceDetails, { borderTopColor: theme.border, paddingTop: Spacing.sm }]}>
               <View style={styles.balanceRow}>
                 <View style={styles.balanceItem}>
-                  <ThemedText type="small" style={styles.balanceLabel}>
+                  <ThemedText style={[styles.balanceLabel, { fontSize: layout.metaFs, color: theme.textMuted }]}>
                     Assigned
                   </ThemedText>
-                  <ThemedText type="h3" style={styles.balanceValue}>
+                  <ThemedText style={[styles.balanceValue, { fontSize: layout.balanceNumFs, color: theme.text }]}>
                     {balance.assigned}
                   </ThemedText>
                 </View>
-                <View style={styles.balanceDivider} />
+                <View style={[styles.balanceDivider, { backgroundColor: theme.border, height: 36 }]} />
                 <View style={styles.balanceItem}>
-                  <ThemedText type="small" style={styles.balanceLabel}>
+                  <ThemedText style={[styles.balanceLabel, { fontSize: layout.metaFs, color: theme.textMuted }]}>
                     Used
                   </ThemedText>
-                  <ThemedText type="h3" style={[styles.balanceValue, { color: "#F44336" }]}>
+                  <ThemedText style={[styles.balanceValue, { fontSize: layout.balanceNumFs, color: Colors.dark.error }]}>
                     {balance.used}
                   </ThemedText>
                 </View>
-                <View style={styles.balanceDivider} />
+                <View style={[styles.balanceDivider, { backgroundColor: theme.border, height: 36 }]} />
                 <View style={styles.balanceItem}>
-                  <ThemedText type="small" style={styles.balanceLabel}>
+                  <ThemedText style={[styles.balanceLabel, { fontSize: layout.metaFs, color: theme.textMuted }]}>
                     Balance
                   </ThemedText>
-                  <ThemedText type="h3" style={[styles.balanceValue, { color: "#22C55E" }]}>
+                  <ThemedText style={[styles.balanceValue, { fontSize: layout.balanceNumFs, color: Colors.dark.success }]}>
                     {balance.balance}
                   </ThemedText>
                 </View>
@@ -337,36 +376,33 @@ export default function LeaveScreen() {
         ))
       )}
 
-      <Spacer height={Spacing["3xl"]} />
+      <Spacer height={Spacing["2xl"]} />
 
-      {/* Leave Applications Section */}
-      <View style={styles.header}>
+      <View style={[styles.header, { paddingHorizontal: 0 }]}>
         <View style={styles.titleContainer}>
-          <View style={styles.titleIconContainer}>
-            <Feather name="file-text" size={22} color={Colors.dark.primary} />
+          <View style={[styles.titleIconContainer, { width: layout.headerIcon, height: layout.headerIcon }]}>
+            <Feather name="file-text" size={layout.iconInner} color={Colors.dark.primary} />
           </View>
-          <ThemedText type="h4" style={styles.title}>Leave Applications</ThemedText>
+          <ThemedText style={[styles.title, { fontSize: layout.titleFs, color: theme.text }]}>Leave Applications</ThemedText>
         </View>
       </View>
 
-      <Spacer height={Spacing.xl} />
+      <Spacer height={layout.sectionGap} />
 
       {isLoadingApplications ? (
-        <View style={styles.loadingContainer}>
-          <View style={styles.loadingIconContainer}>
-            <ActivityIndicator size="small" color={Colors.dark.primary} />
-          </View>
-          <ThemedText style={styles.loadingText}>
+        <View style={[styles.loadingContainer, { minHeight: 100, paddingVertical: Spacing.md }]}>
+          <ActivityIndicator size="small" color={Colors.dark.primary} />
+          <ThemedText style={[styles.loadingText, { marginTop: Spacing.sm, fontSize: layout.metaFs, color: theme.textMuted }]}>
             Loading applications...
           </ThemedText>
         </View>
       ) : leaveApplications.length === 0 ? (
-        <View style={styles.emptyState}>
-          <View style={styles.emptyIconContainer}>
-            <Feather name="file-text" size={56} color={theme.textMuted} />
+        <View style={[styles.emptyState, { borderColor: theme.border, backgroundColor: theme.backgroundDefault, marginHorizontal: 0 }]}>
+          <View style={[styles.emptyIconContainer, { backgroundColor: theme.backgroundSecondary }]}>
+            <Feather name="file-text" size={layout.compact ? 40 : 48} color={theme.textMuted} />
           </View>
-          <ThemedText style={styles.emptyTitle}>No Applications</ThemedText>
-          <ThemedText style={styles.emptySubtitle}>
+          <ThemedText style={[styles.emptyTitle, { color: theme.text, fontSize: layout.compact ? 15 : 16 }]}>No Applications</ThemedText>
+          <ThemedText style={[styles.emptySubtitle, { color: theme.textMuted, fontSize: layout.metaFs }]}>
             Your leave applications will appear here
           </ThemedText>
         </View>
@@ -377,29 +413,43 @@ export default function LeaveScreen() {
             style={[
               styles.applicationCard,
               {
-                backgroundColor: "#FFFFFF",
-                borderColor: "#DBEAFE",
+                padding: layout.cardPad,
+                borderRadius: layout.cardRadius,
+                backgroundColor: theme.cardBackground,
+                borderColor: theme.border,
+                marginHorizontal: 0,
+                marginBottom: layout.sectionGap,
               },
             ]}
           >
-            <View style={styles.applicationHeader}>
+            <View style={[styles.applicationHeader, { marginBottom: Spacing.sm }]}>
               <View style={styles.applicationHeaderLeft}>
                 <View style={styles.iconContainer}>
-                  <View style={styles.iconBackground}>
+                  <View
+                    style={[
+                      styles.iconBackground,
+                      {
+                        width: layout.iconBox - 4,
+                        height: layout.iconBox - 4,
+                        backgroundColor: Colors.dark.primary + "10",
+                        borderColor: Colors.dark.primary + "22",
+                      },
+                    ]}
+                  >
                     <Feather
                       name={getLeaveIcon(application.leave_type_code || '')}
-                      size={18}
+                      size={layout.iconInner - 1}
                       color={Colors.dark.primary}
                     />
                   </View>
                 </View>
                 <View style={styles.applicationInfo}>
-                  <ThemedText style={styles.applicationLeaveType}>
+                  <ThemedText style={[styles.applicationLeaveType, { fontSize: layout.appTitleFs, color: theme.text }]}>
                     {application.leave_type_name || 'Leave'}
                   </ThemedText>
                   <View style={styles.dateRangeContainer}>
-                    <Feather name="calendar" size={12} color={theme.textMuted} />
-                    <ThemedText type="small" style={styles.dateRangeText}>
+                    <Feather name="calendar" size={layout.iconSm} color={theme.textMuted} />
+                    <ThemedText style={[styles.dateRangeText, { fontSize: layout.metaFs, color: theme.textMuted }]}>
                       {formatDate(application.from_date)} - {formatDate(application.to_date)}
                     </ThemedText>
                   </View>
@@ -408,7 +458,11 @@ export default function LeaveScreen() {
               <View
                 style={[
                   styles.statusBadge,
-                  { backgroundColor: getStatusColor(application.status) + "15" },
+                  {
+                    backgroundColor: getStatusColor(application.status) + "15",
+                    paddingVertical: 3,
+                    paddingHorizontal: 8,
+                  },
                 ]}
               >
                 <View
@@ -418,10 +472,9 @@ export default function LeaveScreen() {
                   ]}
                 />
                 <ThemedText
-                  type="small"
                   style={[
                     styles.statusText,
-                    { color: getStatusColor(application.status) },
+                    { color: getStatusColor(application.status), fontSize: layout.metaFs },
                   ]}
                 >
                   {application.status.charAt(0).toUpperCase() + application.status.slice(1)}
@@ -429,43 +482,43 @@ export default function LeaveScreen() {
               </View>
             </View>
 
-            <View style={styles.applicationDetails}>
-              <View style={styles.applicationDetailRow}>
+            <View style={[styles.applicationDetails, { borderTopColor: theme.border, paddingTop: Spacing.sm }]}>
+              <View style={[styles.applicationDetailRow, { marginBottom: Spacing.xs }]}>
                 <View style={styles.applicationDetailItem}>
-                  <Feather name="calendar" size={14} color={theme.textMuted} />
-                  <ThemedText type="small" style={{ color: theme.textMuted, marginLeft: Spacing.xs }}>
-                    {application.total_days} {application.total_days === 1 ? 'Day' : 'Days'} • {getDayTypeText(application.leave_day_type)}
+                  <Feather name="calendar" size={layout.iconMd} color={theme.textMuted} />
+                  <ThemedText style={{ color: theme.textMuted, marginLeft: 4, fontSize: layout.metaFs }}>
+                    {application.total_days} {application.total_days === 1 ? 'Day' : 'Days'} · {getDayTypeText(application.leave_day_type)}
                   </ThemedText>
                 </View>
               </View>
               {application.reason && (
-                <View style={styles.reasonContainer}>
+                <View style={[styles.reasonContainer, { backgroundColor: theme.backgroundSecondary, borderColor: theme.border }]}>
                   <View style={styles.reasonHeader}>
-                    <Feather name="message-circle" size={14} color={theme.textMuted} />
-                    <ThemedText type="small" style={styles.reasonLabel}>
+                    <Feather name="message-circle" size={layout.iconMd} color={theme.textMuted} />
+                    <ThemedText style={[styles.reasonLabel, { fontSize: layout.metaFs, color: theme.textMuted }]}>
                       Reason
                     </ThemedText>
                   </View>
-                  <ThemedText type="small" style={styles.reasonText}>
+                  <ThemedText style={[styles.reasonText, { fontSize: layout.metaFs, color: theme.text }]} numberOfLines={4}>
                     {application.reason}
                   </ThemedText>
                 </View>
               )}
-              <View style={styles.applicationFooter}>
+              <View style={[styles.applicationFooter, { borderTopColor: theme.border, marginTop: Spacing.sm, paddingTop: Spacing.xs }]}>
                 <View style={styles.applicationFooterItem}>
-                  <ThemedText type="small" style={styles.applicationFooterLabel}>
-                    Applied:
+                  <ThemedText style={[styles.applicationFooterLabel, { fontSize: layout.metaFs }]}>
+                    Applied
                   </ThemedText>
-                  <ThemedText type="small" style={{ color: theme.textMuted }}>
+                  <ThemedText style={{ color: theme.textMuted, fontSize: layout.metaFs }}>
                     {formatDate(application.applied_at)}
                   </ThemedText>
                 </View>
                 {application.reviewed_at && (
                   <View style={styles.applicationFooterItem}>
-                    <ThemedText type="small" style={styles.applicationFooterLabel}>
-                      Reviewed:
+                    <ThemedText style={[styles.applicationFooterLabel, { fontSize: layout.metaFs }]}>
+                      Reviewed
                     </ThemedText>
-                    <ThemedText type="small" style={{ color: theme.textMuted }}>
+                    <ThemedText style={{ color: theme.textMuted, fontSize: layout.metaFs }}>
                       {formatDate(application.reviewed_at)}
                     </ThemedText>
                   </View>
@@ -476,7 +529,8 @@ export default function LeaveScreen() {
         ))
       )}
 
-      <Spacer height={Spacing["3xl"]} />
+      <Spacer height={Spacing["2xl"]} />
+      </View>
     </ScreenScrollView>
   );
 }
@@ -486,17 +540,17 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     justifyContent: "flex-end",
     alignItems: "center",
-    paddingHorizontal: Spacing["2xl"],
-    paddingTop: Spacing.md,
+    paddingHorizontal: 0,
+    paddingTop: Spacing.sm,
   },
   header: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
-    paddingHorizontal: Spacing["2xl"],
-    paddingTop: Spacing.lg,
+    paddingHorizontal: 0,
+    paddingTop: 0,
     flexWrap: "wrap",
-    gap: Spacing.md,
+    gap: Spacing.sm,
   },
   headerLeft: {
     flex: 1,
@@ -508,21 +562,14 @@ const styles = StyleSheet.create({
     gap: Spacing.sm,
   },
   titleIconContainer: {
-    width: 36,
-    height: 36,
     borderRadius: BorderRadius.md,
     backgroundColor: Colors.dark.primary + "15",
     alignItems: "center",
     justifyContent: "center",
   },
   title: {
-    fontSize: Platform.select({
-      web: Dimensions.get('window').width > 768 ? 24 : 20,
-      default: 20,
-    }),
     fontWeight: "700",
-    color: "#0F172A",
-    letterSpacing: -0.3,
+    letterSpacing: -0.25,
   },
   addButton: {
     backgroundColor: Colors.dark.primary,
@@ -549,38 +596,27 @@ const styles = StyleSheet.create({
   addButtonContent: {
     flexDirection: "row",
     alignItems: "center",
-    paddingHorizontal: Spacing.lg,
-    paddingVertical: Spacing.md,
     gap: Spacing.xs,
   },
   addButtonText: {
     color: "#FFFFFF",
-    fontSize: Platform.select({
-      web: Dimensions.get('window').width > 768 ? 14 : 13,
-      default: 13,
-    }),
     fontWeight: "700",
-    letterSpacing: 0.2,
+    letterSpacing: 0.15,
   },
   loadingContainer: {
     flex: 1,
     justifyContent: "center",
     alignItems: "center",
-    padding: Spacing["3xl"],
-    minHeight: 200,
+    padding: Spacing.lg,
+    minHeight: 140,
   },
   loadingIconContainer: {
-    width: 64,
-    height: 64,
-    borderRadius: BorderRadius.xl,
+    borderRadius: BorderRadius.lg,
     backgroundColor: Colors.dark.primary + "10",
     alignItems: "center",
     justifyContent: "center",
-    marginBottom: Spacing.lg,
   },
   loadingText: {
-    color: "#64748B",
-    fontSize: 14,
     fontWeight: "500",
   },
   errorContainer: {
@@ -624,78 +660,48 @@ const styles = StyleSheet.create({
     marginBottom: Spacing.xs,
   },
   errorText: {
-    fontSize: Platform.select({
-      web: Dimensions.get('window').width > 768 ? 14 : 13,
-      default: 13,
-    }),
     color: "#991B1B",
-    lineHeight: 20,
+    lineHeight: 18,
   },
   balanceCard: {
-    marginHorizontal: Spacing["2xl"],
-    padding: Platform.select({
-      web: Dimensions.get('window').width > 768 ? Spacing.xl : Spacing.lg,
-      default: Spacing.lg,
-    }),
-    borderRadius: BorderRadius.xl,
     borderWidth: 1,
-    borderColor: "#E2E8F0",
-    marginBottom: Spacing.lg,
-    backgroundColor: "#FFFFFF",
     ...Platform.select({
       ios: {
         shadowColor: "#000",
-        shadowOffset: { width: 0, height: 2 },
-        shadowOpacity: 0.08,
-        shadowRadius: 8,
+        shadowOffset: { width: 0, height: 1 },
+        shadowOpacity: 0.05,
+        shadowRadius: 3,
       },
       android: {
-        elevation: 3,
+        elevation: 2,
       },
       web: {
-        boxShadow: "0 2px 8px rgba(0, 0, 0, 0.08)",
+        boxShadow: "0 1px 4px rgba(0, 0, 0, 0.06)",
       },
     }),
   },
   balanceCardHeader: {
     flexDirection: "row",
     alignItems: "center",
-    marginBottom: Spacing.lg,
-    gap: Spacing.md,
   },
   iconContainer: {
     alignItems: "center",
     justifyContent: "center",
   },
   iconBackground: {
-    width: Platform.select({
-      web: Dimensions.get('window').width > 768 ? 52 : 48,
-      default: 48,
-    }),
-    height: Platform.select({
-      web: Dimensions.get('window').width > 768 ? 52 : 48,
-      default: 48,
-    }),
-    borderRadius: BorderRadius.lg,
-    backgroundColor: Colors.dark.primary + "10",
+    borderRadius: BorderRadius.md,
     alignItems: "center",
     justifyContent: "center",
-    borderWidth: 1,
-    borderColor: Colors.dark.primary + "20",
+    borderWidth: StyleSheet.hairlineWidth,
   },
   balanceInfo: {
     flex: 1,
     minWidth: 0,
   },
   leaveTypeName: {
-    fontSize: Platform.select({
-      web: Dimensions.get('window').width > 768 ? 18 : 17,
-      default: 17,
-    }),
     fontWeight: "700",
-    color: "#0F172A",
-    marginBottom: Spacing.xs,
-    letterSpacing: -0.2,
+    marginBottom: 2,
+    letterSpacing: -0.15,
   },
   yearBadge: {
     flexDirection: "row",
@@ -713,9 +719,7 @@ const styles = StyleSheet.create({
     fontSize: 11,
   },
   balanceDetails: {
-    paddingTop: Spacing.lg,
-    borderTopWidth: 1,
-    borderTopColor: "#E2E8F0",
+    borderTopWidth: StyleSheet.hairlineWidth,
   },
   balanceRow: {
     flexDirection: "row",
@@ -729,88 +733,58 @@ const styles = StyleSheet.create({
     minWidth: 0,
   },
   balanceLabel: {
-    color: "#64748B",
-    fontSize: Platform.select({
-      web: Dimensions.get('window').width > 768 ? 12 : 11,
-      default: 11,
-    }),
-    marginBottom: Spacing.xs,
+    marginBottom: 2,
     fontWeight: "600",
     textTransform: "uppercase",
-    letterSpacing: 0.5,
+    letterSpacing: 0.35,
   },
   balanceDivider: {
     width: 1,
-    height: 48,
-    backgroundColor: "#E2E8F0",
   },
   balanceValue: {
-    fontSize: Platform.select({
-      web: Dimensions.get('window').width > 768 ? 32 : 28,
-      default: 28,
-    }),
     fontWeight: "800",
-    color: "#0F172A",
-    marginTop: Spacing.xs,
-    letterSpacing: -0.5,
+    marginTop: 2,
+    letterSpacing: -0.35,
   },
   emptyState: {
-    padding: Platform.select({
-      web: Dimensions.get('window').width > 768 ? Spacing["3xl"] : Spacing["2xl"],
-      default: Spacing["2xl"],
-    }),
-    borderRadius: BorderRadius.xl,
+    padding: Spacing.lg,
+    borderRadius: BorderRadius.lg,
     alignItems: "center",
-    borderWidth: 1.5,
-    borderColor: "#E2E8F0",
+    borderWidth: 1,
     borderStyle: "dashed",
-    marginHorizontal: Spacing["2xl"],
-    backgroundColor: "#F8FAFC",
+    minHeight: 200,
   },
   emptyIconContainer: {
-    width: 80,
-    height: 80,
-    borderRadius: BorderRadius.xl,
-    backgroundColor: "#F1F5F9",
+    width: 64,
+    height: 64,
+    borderRadius: BorderRadius.lg,
     alignItems: "center",
     justifyContent: "center",
-    marginBottom: Spacing.lg,
+    marginBottom: Spacing.md,
   },
   emptyTitle: {
-    fontSize: 18,
     fontWeight: "700",
-    color: "#0F172A",
     marginBottom: Spacing.xs,
   },
   emptySubtitle: {
-    fontSize: 14,
-    color: "#64748B",
     textAlign: "center",
-    lineHeight: 20,
+    lineHeight: 18,
+    paddingHorizontal: Spacing.sm,
   },
   applicationCard: {
-    marginHorizontal: Spacing["2xl"],
-    padding: Platform.select({
-      web: Dimensions.get('window').width > 768 ? Spacing.lg : Spacing.md,
-      default: Spacing.md,
-    }),
-    borderRadius: BorderRadius.xl,
     borderWidth: 1,
-    borderColor: "#E2E8F0",
-    marginBottom: Spacing.md,
-    backgroundColor: "#FFFFFF",
     ...Platform.select({
       ios: {
         shadowColor: "#000",
-        shadowOffset: { width: 0, height: 2 },
-        shadowOpacity: 0.08,
-        shadowRadius: 8,
+        shadowOffset: { width: 0, height: 1 },
+        shadowOpacity: 0.05,
+        shadowRadius: 3,
       },
       android: {
-        elevation: 3,
+        elevation: 2,
       },
       web: {
-        boxShadow: "0 2px 8px rgba(0, 0, 0, 0.08)",
+        boxShadow: "0 1px 4px rgba(0, 0, 0, 0.06)",
       },
     }),
   },
@@ -818,7 +792,6 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "flex-start",
-    marginBottom: Spacing.md,
     flexWrap: "wrap",
     gap: Spacing.sm,
   },
@@ -826,7 +799,7 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     flex: 1,
-    gap: Spacing.md,
+    gap: Spacing.sm,
     minWidth: 0,
   },
   applicationInfo: {
@@ -834,14 +807,9 @@ const styles = StyleSheet.create({
     minWidth: 0,
   },
   applicationLeaveType: {
-    fontSize: Platform.select({
-      web: Dimensions.get('window').width > 768 ? 17 : 16,
-      default: 16,
-    }),
     fontWeight: "700",
-    color: "#0F172A",
-    marginBottom: Spacing.xs,
-    letterSpacing: -0.2,
+    marginBottom: 2,
+    letterSpacing: -0.15,
   },
   dateRangeContainer: {
     flexDirection: "row",
@@ -849,50 +817,39 @@ const styles = StyleSheet.create({
     gap: Spacing.xs,
   },
   dateRangeText: {
-    color: "#64748B",
-    fontSize: 12,
     fontWeight: "500",
   },
   statusBadge: {
     flexDirection: "row",
     alignItems: "center",
-    paddingHorizontal: Spacing.md,
-    paddingVertical: Spacing.sm,
-    borderRadius: BorderRadius.md,
-    gap: Spacing.xs,
-    borderWidth: 1,
+    borderRadius: BorderRadius.sm,
+    gap: 5,
+    borderWidth: StyleSheet.hairlineWidth,
     borderColor: "transparent",
   },
   statusDot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
+    width: 6,
+    height: 6,
+    borderRadius: 3,
   },
   statusText: {
     fontWeight: "700",
-    fontSize: 12,
     textTransform: "capitalize",
-    letterSpacing: 0.3,
+    letterSpacing: 0.2,
   },
   applicationDetails: {
-    paddingTop: Spacing.md,
-    borderTopWidth: 1,
-    borderTopColor: "#E2E8F0",
+    borderTopWidth: StyleSheet.hairlineWidth,
   },
-  applicationDetailRow: {
-    marginBottom: Spacing.sm,
-  },
+  applicationDetailRow: {},
   applicationDetailItem: {
     flexDirection: "row",
     alignItems: "center",
   },
   reasonContainer: {
-    marginTop: Spacing.md,
-    padding: Spacing.md,
-    backgroundColor: "#F8FAFC",
-    borderRadius: BorderRadius.md,
-    borderWidth: 1,
-    borderColor: "#E2E8F0",
+    marginTop: Spacing.sm,
+    padding: Spacing.sm,
+    borderRadius: BorderRadius.sm,
+    borderWidth: StyleSheet.hairlineWidth,
   },
   reasonHeader: {
     flexDirection: "row",
@@ -901,24 +858,17 @@ const styles = StyleSheet.create({
     marginBottom: Spacing.xs,
   },
   reasonLabel: {
-    color: "#64748B",
     fontWeight: "600",
-    fontSize: 12,
     textTransform: "uppercase",
-    letterSpacing: 0.5,
+    letterSpacing: 0.35,
   },
   reasonText: {
-    color: "#0F172A",
-    fontSize: 13,
-    lineHeight: 20,
+    lineHeight: 18,
   },
   applicationFooter: {
     flexDirection: "row",
     justifyContent: "space-between",
-    marginTop: Spacing.md,
-    paddingTop: Spacing.sm,
-    borderTopWidth: 1,
-    borderTopColor: "#DBEAFE",
+    borderTopWidth: StyleSheet.hairlineWidth,
     flexWrap: "wrap",
     gap: Spacing.sm,
   },
@@ -929,7 +879,7 @@ const styles = StyleSheet.create({
     flexWrap: "wrap",
   },
   applicationFooterLabel: {
-    color: "#757575",
     fontWeight: "600",
+    marginRight: 4,
   },
 });

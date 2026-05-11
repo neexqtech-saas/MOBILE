@@ -1,6 +1,7 @@
 import React from "react";
 import { View, StyleSheet, Pressable, Image } from "react-native";
 import { Feather } from "@expo/vector-icons";
+import * as Haptics from "expo-haptics";
 import { useNavigation } from "@react-navigation/native";
 import { CompositeNavigationProp } from "@react-navigation/native";
 import { BottomTabNavigationProp } from "@react-navigation/bottom-tabs";
@@ -8,7 +9,8 @@ import { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { HomeStackParamList } from "@/navigation/HomeStackNavigator";
 import { MainTabParamList } from "@/navigation/MainTabNavigator";
 import { useHRMSStore } from "@/store/hrmsStore";
-import { Spacing } from "@/constants/theme";
+import { Spacing, Colors } from "@/constants/theme";
+import { ThemedText } from "@/components/ThemedText";
 
 type HeaderRightNavigationProp = CompositeNavigationProp<
   NativeStackNavigationProp<HomeStackParamList>,
@@ -17,22 +19,31 @@ type HeaderRightNavigationProp = CompositeNavigationProp<
 
 export function HeaderRight() {
   const navigation = useNavigation<HeaderRightNavigationProp>();
-  const { employee, announcements } = useHRMSStore();
-  const unreadCount = announcements.filter((a) => !a.isRead).length;
+  const { employee, unreadNotificationsCount } = useHRMSStore();
 
   return (
     <View style={styles.container}>
-      {/* Bell Icon - Disabled/Locked */}
-      <View
-        style={[styles.iconButton, { opacity: 0.5 }]}
+      {/* Bell Icon - Enabled */}
+      <Pressable
+        onPress={() => {
+          Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+          navigation.navigate("Notifications");
+        }}
+        style={({ pressed }) => [
+          styles.iconButton,
+          { opacity: pressed ? 0.7 : 1 }
+        ]}
+        hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
       >
-        <Feather name="bell" size={24} color="#5D4037" />
-        {unreadCount > 0 && (
+        <Feather name="bell" size={24} color="#2563EB" />
+        {unreadNotificationsCount > 0 && (
           <View style={styles.badge}>
-            <View style={styles.badgeDot} />
+            <ThemedText style={styles.badgeText}>
+              {unreadNotificationsCount > 9 ? '9+' : unreadNotificationsCount}
+            </ThemedText>
           </View>
         )}
-      </View>
+      </Pressable>
 
       {/* Profile Icon */}
       <Pressable
@@ -65,19 +76,22 @@ const styles = StyleSheet.create({
   },
   badge: {
     position: "absolute",
-    top: 4,
-    right: 4,
-    width: 10,
-    height: 10,
-    borderRadius: 5,
+    top: 0,
+    right: 0,
+    minWidth: 16,
+    height: 16,
+    borderRadius: 8,
     backgroundColor: "#F44336",
-    borderWidth: 2,
-    borderColor: "#EFF6FF",
+    justifyContent: "center",
+    alignItems: "center",
+    paddingHorizontal: 2,
+    borderWidth: 1.5,
+    borderColor: "#FFFFFF",
   },
-  badgeDot: {
-    flex: 1,
-    borderRadius: 5,
-    backgroundColor: "#F44336",
+  badgeText: {
+    color: "#FFFFFF",
+    fontSize: 8,
+    fontWeight: "700",
   },
   profileButton: {
     width: 36,
@@ -99,4 +113,3 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
 });
-

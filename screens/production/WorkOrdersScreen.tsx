@@ -14,6 +14,7 @@ import { ProductionStackParamList } from "@/navigation/ProductionStackNavigator"
 import Spacer from "@/components/Spacer";
 import { RefreshButton } from "@/components/RefreshButton";
 import { apiService, WorkOrderAPI } from "@/services/api";
+import { getCurrentMonthDates } from "@/utils/dateHelpers";
 
 type WorkOrdersScreenNavigationProp = NativeStackNavigationProp<
   ProductionStackParamList,
@@ -61,7 +62,11 @@ export default function WorkOrdersScreen() {
     setIsLoading(true);
     try {
       console.log("WorkOrdersScreen: Calling API...");
-      const response = await apiService.getMyWorkOrders(employee.adminId, employee.id);
+      const { from, to } = getCurrentMonthDates();
+      const response = await apiService.getMyWorkOrders(employee.adminId, employee.id, {
+        date_from: from,
+        date_to: to
+      });
       console.log("WorkOrdersScreen: API Response:", response);
       if (response.status === 200 && response.data) {
         console.log("WorkOrdersScreen: Work orders loaded:", response.data.length);
@@ -235,6 +240,14 @@ export default function WorkOrdersScreen() {
             </Pressable>
           ))}
         </View>
+
+        {/* Date Range Label */}
+        <View style={{ paddingHorizontal: Spacing.lg, marginBottom: Spacing.xs, marginTop: Spacing.sm }}>
+          <ThemedText type="small" style={{ color: theme.textMuted, fontSize: 12, fontWeight: '500' }}>
+            Showing work orders for this month
+          </ThemedText>
+        </View>
+
         <Spacer height={Spacing.lg} />
 
         {/* Work Orders List */}

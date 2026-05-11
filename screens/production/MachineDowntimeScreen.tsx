@@ -14,6 +14,7 @@ import { ProductionStackParamList } from "@/navigation/ProductionStackNavigator"
 import Spacer from "@/components/Spacer";
 import { RefreshButton } from "@/components/RefreshButton";
 import { apiService, MachineDowntimeAPI } from "@/services/api";
+import { getCurrentMonthDates } from "@/utils/dateHelpers";
 
 type MachineDowntimeScreenNavigationProp = NativeStackNavigationProp<
   ProductionStackParamList,
@@ -48,9 +49,14 @@ export default function MachineDowntimeScreen() {
 
     setIsLoading(true);
     try {
+      const { from, to } = getCurrentMonthDates();
       const response = await apiService.getMyMachineDowntimes(
         employee.adminId,
-        employee.id
+        employee.id,
+        {
+          date_from: from,
+          date_to: to
+        }
       );
       if (response.status === 200 && response.data) {
         setDowntimes(response.data);
@@ -120,6 +126,13 @@ export default function MachineDowntimeScreen() {
           </Pressable>
         </View>
         <Spacer height={Spacing.md} />
+
+        {/* Date Range Label */}
+        <View style={{ paddingHorizontal: Spacing.lg, marginBottom: Spacing.xs }}>
+          <ThemedText type="small" style={{ color: theme.textMuted, fontSize: 12, fontWeight: '500' }}>
+            Showing downtime records for this month
+          </ThemedText>
+        </View>
 
         {/* Downtime List */}
         {downtimes.length === 0 ? (

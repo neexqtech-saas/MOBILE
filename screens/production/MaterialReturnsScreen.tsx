@@ -14,6 +14,7 @@ import { ProductionStackParamList } from "@/navigation/ProductionStackNavigator"
 import Spacer from "@/components/Spacer";
 import { RefreshButton } from "@/components/RefreshButton";
 import { apiService, MaterialReturnAPI } from "@/services/api";
+import { getCurrentMonthDates } from "@/utils/dateHelpers";
 
 type MaterialReturnsScreenNavigationProp = NativeStackNavigationProp<
   ProductionStackParamList,
@@ -48,9 +49,14 @@ export default function MaterialReturnsScreen() {
 
     setIsLoading(true);
     try {
+      const { from, to } = getCurrentMonthDates();
       const response = await apiService.getMyMaterialReturns(
         employee.adminId,
-        employee.id
+        employee.id,
+        {
+          date_from: from,
+          date_to: to
+        }
       );
       if (response.status === 200 && response.data) {
         setReturns(response.data);
@@ -100,6 +106,13 @@ export default function MaterialReturnsScreen() {
           </Pressable>
         </View>
         <Spacer height={Spacing.md} />
+
+        {/* Date Range Label */}
+        <View style={{ paddingHorizontal: Spacing.lg, marginBottom: Spacing.xs }}>
+          <ThemedText type="small" style={{ color: theme.textMuted, fontSize: 12, fontWeight: '500' }}>
+            Showing material returns for this month
+          </ThemedText>
+        </View>
 
         {/* Returns List */}
         {returns.length === 0 ? (

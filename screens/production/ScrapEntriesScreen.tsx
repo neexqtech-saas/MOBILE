@@ -14,6 +14,7 @@ import { ProductionStackParamList } from "@/navigation/ProductionStackNavigator"
 import Spacer from "@/components/Spacer";
 import { RefreshButton } from "@/components/RefreshButton";
 import { apiService, ScrapEntryAPI } from "@/services/api";
+import { getCurrentMonthDates } from "@/utils/dateHelpers";
 
 type ScrapEntriesScreenNavigationProp = NativeStackNavigationProp<
   ProductionStackParamList,
@@ -48,9 +49,14 @@ export default function ScrapEntriesScreen() {
 
     setIsLoading(true);
     try {
+      const { from, to } = getCurrentMonthDates();
       const response = await apiService.getMyScrapEntries(
-        employee.adminId,
-        employee.id
+        employee.adminId, 
+        employee.id,
+        {
+          date_from: from,
+          date_to: to
+        }
       );
       if (response.status === 200 && response.data) {
         setScrapEntries(response.data);
@@ -111,6 +117,13 @@ export default function ScrapEntriesScreen() {
           </Pressable>
         </View>
         <Spacer height={Spacing.md} />
+
+        {/* Date Range Label */}
+        <View style={{ paddingHorizontal: Spacing.lg, marginBottom: Spacing.xs }}>
+          <ThemedText type="small" style={{ color: theme.textMuted, fontSize: 12, fontWeight: '500' }}>
+            Showing scrap entries for this month
+          </ThemedText>
+        </View>
 
         {/* Scrap Entries List */}
         {scrapEntries.length === 0 ? (

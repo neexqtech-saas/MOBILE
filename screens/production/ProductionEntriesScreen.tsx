@@ -15,6 +15,7 @@ import { ProductionStackParamList } from "@/navigation/ProductionStackNavigator"
 import Spacer from "@/components/Spacer";
 import { RefreshButton } from "@/components/RefreshButton";
 import { apiService, ProductionEntryAPI } from "@/services/api";
+import { getCurrentMonthDates } from "@/utils/dateHelpers";
 
 type ProductionEntriesScreenNavigationProp = NativeStackNavigationProp<
   ProductionStackParamList,
@@ -53,9 +54,14 @@ export default function ProductionEntriesScreen() {
 
     setIsLoading(true);
     try {
+      const { from, to } = getCurrentMonthDates();
       const response = await apiService.getMyProductionEntries(
         employee.adminId,
-        employee.id
+        employee.id,
+        {
+          date_from: from,
+          date_to: to
+        }
       );
       if (response.status === 200 && response.data) {
         setProductionEntries(response.data);
@@ -174,6 +180,14 @@ export default function ProductionEntriesScreen() {
             </Pressable>
           ))}
         </View>
+
+        {/* Date Range Label */}
+        <View style={{ paddingHorizontal: Spacing.lg, marginBottom: Spacing.xs, marginTop: Spacing.sm }}>
+          <ThemedText type="small" style={{ color: theme.textMuted, fontSize: 12, fontWeight: '500' }}>
+            Showing production entries for this month
+          </ThemedText>
+        </View>
+
         <Spacer height={Spacing.lg} />
 
         {/* Production Entries List */}

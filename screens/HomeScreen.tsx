@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from "react";
-import { View, StyleSheet, Pressable, Alert, Platform, ActivityIndicator } from "react-native";
+import React, { useState, useEffect, useMemo } from "react";
+import { View, StyleSheet, Pressable, Alert, Platform, ActivityIndicator, useWindowDimensions } from "react-native";
 import { Feather } from "@expo/vector-icons";
 import { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { CompositeNavigationProp, useNavigation } from "@react-navigation/native";
@@ -7,6 +7,7 @@ import { BottomTabNavigationProp } from "@react-navigation/bottom-tabs";
 import { LinearGradient } from "expo-linear-gradient";
 import * as Haptics from "expo-haptics";
 import * as ImagePicker from "expo-image-picker";
+import * as Location from "expo-location";
 import Animated, {
   useAnimatedStyle,
   withSpring,
@@ -22,7 +23,10 @@ import { HomeStackParamList } from "@/navigation/HomeStackNavigator";
 import { MainTabParamList } from "@/navigation/MainTabNavigator";
 import Spacer from "@/components/Spacer";
 import { validateFaceImage } from "@/utils/faceDetection";
-import { apiService } from "@/services/api";
+import { apiService, type PunchCountryMeta } from "@/services/api";
+import { getCurrentMonthDates } from "@/utils/dateHelpers";
+import { formatCountryLabel } from "@/utils/punchLocationTime";
+import { resolvePunchLocation } from "@/utils/resolvePunchLocation";
 
 type HomeScreenNavigationProp = CompositeNavigationProp<
   NativeStackNavigationProp<HomeStackParamList, "Home">,
@@ -34,21 +38,75 @@ const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 export default function HomeScreen() {
   const navigation = useNavigation<HomeScreenNavigationProp>();
   const { theme } = useTheme();
-  const { 
-    employee, 
-    todayAttendance, 
-    checkIn, 
-    checkOut, 
+  const {
+    employee,
+    todayAttendance,
+    checkIn,
+    checkOut,
     announcements,
+    notificationHistory,
+    unreadNotificationsCount,
     organizationSettings,
     fetchTodayAttendance,
     fetchAttendanceAfterPunch,
     fetchAttendanceHistory,
     fetchHolidays,
-    fetchLeaveTypes
+    fetchLeaveTypes,
+    fetchNotificationHistory,
+    markNotificationAsRead,
   } = useHRMSStore();
 
+  const { width: screenWidth } = useWindowDimensions();
+
+  // Responsive tweaks for Attendance UI
+  const isTinyPhone = screenWidth < 360;
+  const isNarrowLayout = screenWidth < 400;
+
+  const sectionMarginX = isTinyPhone ? Spacing.lg : Spacing["2xl"];
+  const attendanceCardPadding = isTinyPhone ? Spacing.sm + 4 : isNarrowLayout ? Spacing.md + 4 : Spacing.lg;
+  const attendanceInfoGap = isNarrowLayout ? Spacing.sm + 2 : Spacing.sm + 4;
+  const attendanceMetaIconSize = isTinyPhone ? 11 : 12;
+  const attendanceLabelFontSize = isTinyPhone ? 10 : 11;
+  const attendanceTimeFontSize = isTinyPhone ? 13 : isNarrowLayout ? 14 : 15;
+  const attendanceTimeLineHeight = attendanceTimeFontSize + 4;
+  const attendanceDateValueSize = isTinyPhone ? 14 : 15;
+  const attendanceCardContentBottom = isTinyPhone ? Spacing.md : Spacing.lg;
+  const attendanceDateBlockMarginB = isTinyPhone ? Spacing.sm : Spacing.md;
+  const attendanceDateBlockPaddingB = isTinyPhone ? Spacing.sm : Spacing.md;
+  const attendanceStatusBadgeMarginB = isTinyPhone ? Spacing.sm : Spacing.md;
+  const durationRowFontSize = isTinyPhone ? 12 : 13;
+  const durationIconSize = isTinyPhone ? 14 : 15;
+
+  const greetingPaddingH = sectionMarginX;
+  const greetingPaddingTop = isTinyPhone ? Spacing.md + 2 : Spacing.lg;
+  const greetingPaddingBottom = isTinyPhone ? Spacing.md : Spacing.lg;
+  const greetingLeadSize = isTinyPhone ? 11 : 12;
+  const greetingNameSize = isTinyPhone ? 22 : isNarrowLayout ? 24 : 26;
+  const greetingNameLineHeight = greetingNameSize + (isTinyPhone ? 6 : 8);
+  const headerTimeIconSize = isTinyPhone ? 12 : 13;
+  const headerTimeFontSize = isTinyPhone ? 12 : 13;
+  const headerDateFontSize = isTinyPhone ? 11 : 12;
+  const checkInButtonPaddingX = isTinyPhone ? Spacing.md + 4 : Spacing.lg;
+  const checkInButtonPaddingY = isTinyPhone ? Spacing.sm + 4 : Spacing.md;
+  const checkInButtonMinHeight = isTinyPhone ? 44 : 48;
+
+  // Single row: 3 equal columns (Attendance + My Workspace)
+  const shortcutsGridGap = isTinyPhone ? Spacing.xs : isNarrowLayout ? Spacing.sm : Spacing.md;
+  const shortcutItemPadding = isTinyPhone ? Spacing.xs : isNarrowLayout ? Spacing.sm : Spacing.md;
+  const shortcutIconSize = isTinyPhone ? 44 : isNarrowLayout ? 50 : 56;
+  // Max starting size; shrinks with adjustsFontSizeToFit so full label fits in one line (native)
+  const shortcutLabelFontSize = isTinyPhone ? 11 : isNarrowLayout ? 12 : 13;
+  const shortcutLabelMinScale = isTinyPhone ? 0.48 : isNarrowLayout ? 0.55 : 0.62;
+  const shortcutLabelLines = Platform.OS === "web" ? 2 : 1;
+
   const [currentTime, setCurrentTime] = useState(new Date());
+  const [punchLocationDisplay, setPunchLocationDisplay] = useState<{
+    checkInPlace: string | null;
+    checkOutPlace: string | null;
+  }>({
+    checkInPlace: null,
+    checkOutPlace: null,
+  });
   const [isPunching, setIsPunching] = useState(false);
   const [punchError, setPunchError] = useState<string | null>(null);
   const [isPunchPressed, setIsPunchPressed] = useState(false);
@@ -77,7 +135,88 @@ export default function HomeScreen() {
   useEffect(() => {
     fetchTodayAttendance();
     fetchPendingCounts();
-  }, [fetchTodayAttendance]);
+    fetchNotificationHistory();
+  }, [fetchTodayAttendance, fetchNotificationHistory]);
+
+  useEffect(() => {
+    let cancelled = false;
+    const ta = todayAttendance;
+
+    const empty = {
+      checkInPlace: null as string | null,
+      checkOutPlace: null as string | null,
+    };
+
+    if (!ta) {
+      setPunchLocationDisplay(empty);
+      return;
+    }
+
+    (async () => {
+      const next = { ...empty };
+
+      const resolvePlace = async (
+        lat: number | null | undefined,
+        lng: number | null | undefined,
+        fallbackText: string | null | undefined
+      ): Promise<string | null> => {
+        if (lat != null && lng != null) {
+          try {
+            const results = await Location.reverseGeocodeAsync({ latitude: lat, longitude: lng });
+            const g = results[0];
+            if (g && !cancelled) {
+              const place = [g.city, g.region, g.country].filter(Boolean).join(", ") || null;
+              return place || fallbackText || null;
+            }
+          } catch {
+            /* ignore */
+          }
+        }
+        return fallbackText || null;
+      };
+
+      const checkInPlace = await resolvePlace(ta.checkInLatitude, ta.checkInLongitude, ta.checkInLocation);
+      if (!cancelled) {
+        next.checkInPlace = checkInPlace;
+      }
+
+      const checkOutPlace = await resolvePlace(ta.checkOutLatitude, ta.checkOutLongitude, ta.checkOutLocation);
+      if (!cancelled) {
+        next.checkOutPlace = checkOutPlace;
+      }
+
+      if (!cancelled) {
+        setPunchLocationDisplay(next);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    todayAttendance?.checkInLatitude,
+    todayAttendance?.checkInLongitude,
+    todayAttendance?.checkOutLatitude,
+    todayAttendance?.checkOutLongitude,
+    todayAttendance?.checkInLocation,
+    todayAttendance?.checkOutLocation,
+    todayAttendance?.date,
+  ]);
+
+  /** One row: after checkout show last check-out country/place; otherwise last check-in (avoids duplicate IN · India + address). */
+  const lastPunchDisplay = useMemo(() => {
+    const ta = todayAttendance;
+    if (!ta) {
+      return { countryLabel: null as string | null, place: null as string | null };
+    }
+    const useCheckout = !!ta.checkOut;
+    const countryLabel = formatCountryLabel(
+      useCheckout ? ta.checkOutCountryCode : ta.checkInCountryCode,
+      useCheckout ? ta.checkOutCountry : ta.checkInCountry
+    );
+    const place = useCheckout ? punchLocationDisplay.checkOutPlace : punchLocationDisplay.checkInPlace;
+    return { countryLabel, place };
+  }, [todayAttendance, punchLocationDisplay.checkInPlace, punchLocationDisplay.checkOutPlace]);
 
   // Fetch pending counts for tasks and visits
   const fetchPendingCounts = async () => {
@@ -87,8 +226,9 @@ export default function HomeScreen() {
     if (!siteId || !userId) return;
 
     try {
-      // Fetch pending tasks count
-      const tasksResponse = await apiService.getMyTasks(siteId, userId);
+      const { from, to } = getCurrentMonthDates();
+      // Fetch pending tasks count for current month
+      const tasksResponse = await apiService.getMyTasks(siteId, userId, from, to);
       if (tasksResponse.status === 200 && tasksResponse.data) {
         const pendingTasks = tasksResponse.data.filter(
           (task: any) => task.status === 'pending' || task.status === 'in-progress' || task.status === 'in_progress'
@@ -100,8 +240,9 @@ export default function HomeScreen() {
     }
 
     try {
-      // Fetch pending visits count
-      const visitsResponse = await apiService.getVisits(siteId, userId);
+      const { from, to } = getCurrentMonthDates();
+      // Fetch pending visits count for current month
+      const visitsResponse = await apiService.getVisits(siteId, userId, from, to);
       if (visitsResponse.status === 200 && visitsResponse.data?.results) {
         const pendingVisits = visitsResponse.data.results.filter(
           (visit: any) => visit.status === 'pending' || visit.status === 'scheduled'
@@ -136,7 +277,7 @@ export default function HomeScreen() {
     const totalMinutes = Math.round(hours * 60);
     const h = Math.floor(totalMinutes / 60);
     const m = totalMinutes % 60;
-    
+
     if (h === 0 && m === 0) return "0 minutes";
     if (h === 0) return `${m} minute${m !== 1 ? 's' : ''}`;
     if (m === 0) return `${h} hour${h !== 1 ? 's' : ''}`;
@@ -145,9 +286,9 @@ export default function HomeScreen() {
 
   const getGreeting = () => {
     const hour = currentTime.getHours();
-    if (hour < 12) return "Good Morning";
-    if (hour < 17) return "Good Afternoon";
-    return "Good Evening";
+    if (hour < 12) return "Good morning";
+    if (hour < 17) return "Good afternoon";
+    return "Good evening";
   };
 
   // Get current location
@@ -161,27 +302,27 @@ export default function HomeScreen() {
         }
 
         return new Promise((resolve) => {
-        navigator.geolocation.getCurrentPosition(
-          (position) => {
+          navigator.geolocation.getCurrentPosition(
+            (position) => {
               // Round to 6 decimal places
               const lat = parseFloat(position.coords.latitude.toFixed(6));
               const lng = parseFloat(position.coords.longitude.toFixed(6));
-            resolve({
+              resolve({
                 latitude: lat,
                 longitude: lng,
-            });
-          },
-          (error) => {
-            console.error('Error getting location:', error);
-            // Don't block attendance if location fails
-            resolve(null);
-          },
-          {
-            enableHighAccuracy: false,
-            timeout: 2000, // Reduced timeout to 2 seconds for faster response
-            maximumAge: 600000, // Accept 10 minute old cached location for faster response
-          }
-        );
+              });
+            },
+            (error) => {
+              console.error('Error getting location:', error);
+              // Don't block attendance if location fails
+              resolve(null);
+            },
+            {
+              enableHighAccuracy: false,
+              timeout: 2000, // Reduced timeout to 2 seconds for faster response
+              maximumAge: 600000, // Accept 10 minute old cached location for faster response
+            }
+          );
         });
       } else {
         // Mobile: Location fetching - currently not implemented for mobile
@@ -228,7 +369,7 @@ export default function HomeScreen() {
             let totalBrightness = 0;
             const stepX = Math.max(1, Math.floor(canvas.width / 20));
             const stepY = Math.max(1, Math.floor(canvas.height / 20));
-            
+
             // Use grid sampling for better performance
             for (let y = 0; y < canvas.height; y += stepY) {
               for (let x = 0; x < canvas.width; x += stepX) {
@@ -273,10 +414,10 @@ export default function HomeScreen() {
                 return variance < 50;
               };
 
-              const edgesUniform = 
-                checkUniformity(topEdge) && 
-                checkUniformity(bottomEdge) && 
-                checkUniformity(leftEdge) && 
+              const edgesUniform =
+                checkUniformity(topEdge) &&
+                checkUniformity(bottomEdge) &&
+                checkUniformity(leftEdge) &&
                 checkUniformity(rightEdge);
 
               if (edgesUniform) {
@@ -309,13 +450,13 @@ export default function HomeScreen() {
 
                 let isSkinTone = false;
                 if (isLowLight) {
-                  isSkinTone = 
+                  isSkinTone =
                     r > 30 && r < 255 &&
                     g > 20 && g < 240 &&
                     b > 15 && b < 200 &&
                     brightness > 20;
                 } else {
-                  isSkinTone = 
+                  isSkinTone =
                     r > 95 && r < 255 &&
                     g > 40 && g < 240 &&
                     b > 20 && b < 200 &&
@@ -352,8 +493,8 @@ export default function HomeScreen() {
               const nextIdx = (y * canvas.width + (x + 1)) * 4;
 
               const diff = Math.abs(data[idx] - data[nextIdx]) +
-                          Math.abs(data[idx + 1] - data[nextIdx + 1]) +
-                          Math.abs(data[idx + 2] - data[nextIdx + 2]);
+                Math.abs(data[idx + 1] - data[nextIdx + 1]) +
+                Math.abs(data[idx + 2] - data[nextIdx + 2]);
               blurScore += diff;
             }
 
@@ -426,7 +567,7 @@ export default function HomeScreen() {
       if (!result.canceled && result.assets && result.assets.length > 0) {
         const asset = result.assets[0];
         if (asset.base64) {
-          return { 
+          return {
             image: `data:image/png;base64,${asset.base64}`,
             location: location || undefined
           };
@@ -450,7 +591,7 @@ export default function HomeScreen() {
 
       // Location will be fetched separately, don't block camera
       let locationData: { latitude: number; longitude: number } | null = null;
-      
+
       // Request camera access IMMEDIATELY
       navigator.mediaDevices
         .getUserMedia({ video: { facingMode: 'user' } })
@@ -467,7 +608,7 @@ export default function HomeScreen() {
                   longitude: lng,
                 };
               },
-              () => {}, // Silent fail - location is optional
+              () => { }, // Silent fail - location is optional
               {
                 enableHighAccuracy: false,
                 timeout: 3000,
@@ -640,11 +781,11 @@ export default function HomeScreen() {
 
   const handlePunch = async () => {
     if (isPunching) return;
-    
+
     setPunchError(null); // Clear previous errors
     setIsPunching(true);
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-    
+
     try {
       // Capture selfie (location fetched in background for web)
       const captureResult = await captureSelfie();
@@ -655,9 +796,21 @@ export default function HomeScreen() {
         return;
       }
 
-      // Validate the captured image
-      // Use comprehensive face detection
-      const validation = await validateFaceImage(captureResult.image);
+      // Validate the captured image (simplified - fast check)
+      // Face detection - run in parallel with location if needed
+      const validationPromise = validateFaceImage(captureResult.image);
+
+      // If location not available, fetch it in parallel with face validation
+      let locationPromise: Promise<any> | null = null;
+      if (!captureResult.location?.latitude || !captureResult.location?.longitude) {
+        locationPromise = Promise.race([
+          getCurrentLocation(),
+          new Promise<null>((resolve) => setTimeout(() => resolve(null), 800))
+        ]).catch(() => null);
+      }
+
+      // Wait for face validation (required)
+      const validation = await validationPromise;
       if (!validation.valid) {
         setIsPunching(false);
         setPunchError(validation.error || "Face detection failed. Please capture a clear photo of your face.");
@@ -665,23 +818,19 @@ export default function HomeScreen() {
         return;
       }
 
-      // Use location from capture (if not available, try to fetch quickly)
+      // Get location if we started fetching it
       let latitude = captureResult.location?.latitude;
       let longitude = captureResult.location?.longitude;
-      
-      // If location not available, try to fetch it with timeout
-      if (!latitude || !longitude) {
+
+      if (locationPromise) {
         try {
-          const location = await Promise.race([
-            getCurrentLocation(),
-            new Promise<null>((resolve) => setTimeout(() => resolve(null), 2000)) // 2 second timeout
-          ]);
+          const location = await locationPromise;
           if (location) {
             latitude = location.latitude;
             longitude = location.longitude;
           }
         } catch (error) {
-          console.log('Location fetch timeout or error, continuing without location');
+          console.log('Location fetch error, continuing without location');
         }
       }
 
@@ -689,37 +838,51 @@ export default function HomeScreen() {
       const roundedLat = latitude ? parseFloat(latitude.toFixed(6)) : undefined;
       const roundedLng = longitude ? parseFloat(longitude.toFixed(6)) : undefined;
 
+      let punchCountryMeta: PunchCountryMeta | undefined;
+      if (roundedLat != null && roundedLng != null) {
+        const resolved = await resolvePunchLocation(roundedLat, roundedLng);
+        punchCountryMeta = {
+          country: resolved.country,
+          countryCode: resolved.countryCode,
+          location: resolved.location,
+        };
+      }
+
       // Use last_login_status (opposite logic)
       // If last_login_status is "checkin" → perform "Check Out"
       // If last_login_status is "checkout" → perform "Check In"
       const lastStatus = todayAttendance?.lastLoginStatus?.toLowerCase();
       const shouldCheckIn = !lastStatus || lastStatus === "checkout";
-      
+
       if (shouldCheckIn) {
         // Check In with selfie and location
-        const result = await checkIn([captureResult.image], roundedLat, roundedLng);
+        const result = await checkIn([captureResult.image], roundedLat, roundedLng, punchCountryMeta);
         if (!result.success) {
           setPunchError(result.error || "Check-in failed. Please try again.");
           Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
         } else {
-          // Immediately call GET API after successful check-in
-          console.log('Calling GET API after check-in...');
-          await fetchAttendanceAfterPunch();
-          console.log('Attendance data fetched after check-in');
+          // Success - show immediately, fetch attendance in background (non-blocking)
           Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+          // Fetch attendance in background without blocking UI
+          fetchAttendanceAfterPunch().catch(err => {
+            console.log('Background attendance fetch error:', err);
+            // Silently fail - user already got success feedback
+          });
         }
       } else {
         // Check Out with selfie and location
-        const result = await checkOut([captureResult.image], roundedLat, roundedLng);
+        const result = await checkOut([captureResult.image], roundedLat, roundedLng, punchCountryMeta);
         if (!result.success) {
           setPunchError(result.error || "Check-out failed. Please try again.");
           Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
         } else {
-          // Immediately call GET API after successful check-out
-          console.log('Calling GET API after check-out...');
-          await fetchAttendanceAfterPunch();
-          console.log('Attendance data fetched after check-out');
+          // Success - show immediately, fetch attendance in background (non-blocking)
           Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+          // Fetch attendance in background without blocking UI
+          fetchAttendanceAfterPunch().catch(err => {
+            console.log('Background attendance fetch error:', err);
+            // Silently fail - user already got success feedback
+          });
         }
       }
     } catch (error) {
@@ -738,10 +901,10 @@ export default function HomeScreen() {
   // Refresh all APIs
   const handleRefreshAll = async () => {
     if (isRefreshing) return;
-    
+
     setIsRefreshing(true);
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-    
+
     try {
       // Refresh all APIs in parallel
       await Promise.all([
@@ -749,8 +912,9 @@ export default function HomeScreen() {
         fetchAttendanceHistory(),
         fetchHolidays(),
         fetchLeaveTypes(),
+        fetchNotificationHistory(),
       ]);
-      
+
       Alert.alert(
         "✅ Data Refreshed",
         "All data has been refreshed successfully.",
@@ -783,45 +947,51 @@ export default function HomeScreen() {
   // Show shortcuts by default if settings not loaded, only hide if explicitly false
   const enabledMenuItems = organizationSettings?.enabled_menu_items || {};
   const hasSettings = !!organizationSettings;
-  
+
   const allAttendanceShortcuts = [
-    { icon: "calendar" as const, label: "Attendance", onPress: () => {
-      console.log('🔗 Navigating to AttendanceTab');
-      // Get parent tab navigator to navigate to tabs
-      const parent = navigation.getParent();
-      if (parent) {
-        parent.navigate("AttendanceTab");
-      } else {
-        // Fallback: try direct navigation
-        navigation.navigate("AttendanceTab");
-      }
-    }, menuKey: "attendance" },
+    {
+      icon: "calendar" as const, label: "Attendance", onPress: () => {
+        console.log('🔗 Navigating to AttendanceTab');
+        // Get parent tab navigator to navigate to tabs
+        const parent = navigation.getParent();
+        if (parent) {
+          parent.navigate("AttendanceTab");
+        } else {
+          // Fallback: try direct navigation
+          navigation.navigate("AttendanceTab");
+        }
+      }, menuKey: "attendance"
+    },
     { icon: "sun" as const, label: "Holidays", onPress: () => navigation.navigate("Holidays"), menuKey: "holiday-calendar" },
-    { icon: "briefcase" as const, label: "Leave", onPress: () => {
-      console.log('🔗 Navigating to LeaveTab');
-      // Get parent tab navigator to navigate to tabs
-      const parent = navigation.getParent();
-      if (parent) {
-        parent.navigate("LeaveTab");
-      } else {
-        // Fallback: try direct navigation
-        navigation.navigate("LeaveTab");
-      }
-    }, menuKey: "application" },
+    {
+      icon: "briefcase" as const, label: "Leave", onPress: () => {
+        console.log('🔗 Navigating to LeaveTab');
+        // Get parent tab navigator to navigate to tabs
+        const parent = navigation.getParent();
+        if (parent) {
+          parent.navigate("LeaveTab");
+        } else {
+          // Fallback: try direct navigation
+          navigation.navigate("LeaveTab");
+        }
+      }, menuKey: "application"
+    },
   ];
 
   const allWorkspaceShortcuts = [
-    { icon: "check-square" as const, label: "Tasks", onPress: () => {
-      console.log('🔗 Navigating to TaskTab');
-      // Get parent tab navigator to navigate to tabs
-      const parent = navigation.getParent();
-      if (parent) {
-        parent.navigate("TaskTab");
-      } else {
-        // Fallback: try direct navigation
-        navigation.navigate("TaskTab");
-      }
-    }, menuKey: "tasks" },
+    {
+      icon: "check-square" as const, label: "Tasks", onPress: () => {
+        console.log('🔗 Navigating to TaskTab');
+        // Get parent tab navigator to navigate to tabs
+        const parent = navigation.getParent();
+        if (parent) {
+          parent.navigate("TaskTab");
+        } else {
+          // Fallback: try direct navigation
+          navigation.navigate("TaskTab");
+        }
+      }, menuKey: "tasks"
+    },
     { icon: "dollar-sign" as const, label: "Expenses", onPress: () => navigation.navigate("Expenses"), menuKey: "expense" },
     { icon: "map-pin" as const, label: "Visits", onPress: () => navigation.navigate("Visits"), menuKey: "visit" },
   ];
@@ -867,28 +1037,79 @@ export default function HomeScreen() {
 
   return (
     <View style={styles.container}>
-    <ScreenScrollView>
+      <ScreenScrollView>
         {/* Professional Header Section */}
-      <View style={styles.greetingSection}>
+        <View
+          style={[
+            styles.greetingSection,
+            {
+              paddingHorizontal: greetingPaddingH,
+              paddingTop: greetingPaddingTop,
+              paddingBottom: greetingPaddingBottom,
+            },
+          ]}
+        >
           <View style={styles.greetingContent}>
-            <View style={styles.welcomeHeader}>
+            <View style={[styles.welcomeHeader, { marginBottom: isTinyPhone ? Spacing.sm : Spacing.md }]}>
               <View style={styles.welcomeTextContainer}>
-                <ThemedText type="small" style={styles.greetingText}>
+                <ThemedText
+                  type="small"
+                  style={[
+                    styles.greetingText,
+                    {
+                      fontSize: greetingLeadSize,
+                      marginBottom: 3,
+                      letterSpacing: 0.35,
+                      fontWeight: "600",
+                      color: "#CA8A04",
+                      textTransform: "none",
+                    },
+                  ]}
+                >
                   {getGreeting()}
                 </ThemedText>
-                <ThemedText type="h2" style={styles.welcomeText}>
+                <ThemedText
+                  type="h2"
+                  style={[
+                    styles.welcomeText,
+                    {
+                      fontSize: greetingNameSize,
+                      lineHeight: greetingNameLineHeight,
+                      letterSpacing: -0.4,
+                      fontWeight: "700",
+                      color: "#0F172A",
+                    },
+                  ]}
+                >
                   {employee.name.split(" ")[0]}
                 </ThemedText>
               </View>
             </View>
-            <View style={styles.timeDateContainer}>
-              <View style={styles.timeBadge}>
-                <Feather name="clock" size={14} color="#2563EB" />
-                <ThemedText type="small" style={styles.timeText}>
+            <View
+              style={[
+                styles.timeDateContainer,
+                { gap: isTinyPhone ? Spacing.sm : Spacing.md, marginTop: 2 },
+              ]}
+            >
+              <View
+                style={[
+                  styles.timeBadge,
+                  {
+                    paddingHorizontal: isTinyPhone ? Spacing.sm : Spacing.md,
+                    paddingVertical: isTinyPhone ? 4 : Spacing.xs,
+                  },
+                ]}
+              >
+                <Feather name="clock" size={headerTimeIconSize} color="#2563EB" />
+                <ThemedText type="small" style={[styles.timeText, { fontSize: headerTimeFontSize }]}>
                   {formatTime(currentTime)}
                 </ThemedText>
               </View>
-              <ThemedText type="small" style={styles.dateText}>
+              <ThemedText
+                type="small"
+                style={[styles.dateText, { fontSize: headerDateFontSize, lineHeight: headerDateFontSize + 4 }]}
+                numberOfLines={2}
+              >
                 {currentTime.toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric" })}
               </ThemedText>
             </View>
@@ -903,7 +1124,7 @@ export default function HomeScreen() {
             disabled={isRefreshing}
             style={({ pressed }) => [
               styles.refreshButton,
-              { 
+              {
                 transform: [{ scale: pressed ? 0.95 : 1 }],
                 opacity: isRefreshing ? 0.6 : 1,
               },
@@ -912,51 +1133,118 @@ export default function HomeScreen() {
             {isRefreshing ? (
               <ActivityIndicator size="small" color="#2563EB" />
             ) : (
-              <Feather name="refresh-cw" size={18} color="#2563EB" />
+              <Feather name="refresh-cw" size={isTinyPhone ? 17 : 18} color="#2563EB" />
             )}
           </Pressable>
-      </View>
+        </View>
 
-      <Spacer height={Spacing.xl} />
+        <Spacer height={Spacing.xl} />
 
         {/* Professional Attendance Card */}
-        <View style={styles.attendanceCard}>
+        <View
+          style={[
+            styles.attendanceCard,
+            { marginHorizontal: sectionMarginX, padding: attendanceCardPadding },
+          ]}
+        >
           {/* Status Badge */}
-          <View style={styles.statusBadgeContainer}>
+          <View
+            style={[
+              styles.statusBadgeContainer,
+              {
+                marginBottom: attendanceStatusBadgeMarginB,
+                paddingHorizontal: isTinyPhone ? Spacing.sm : Spacing.md,
+                paddingVertical: Spacing.xs + 1,
+              },
+            ]}
+          >
             <View style={[styles.statusDot, { backgroundColor: status.color }]} />
-            <ThemedText style={[styles.statusText, { color: status.color }]}>
+            <ThemedText style={[styles.statusText, { color: status.color, fontSize: isTinyPhone ? 10 : 11 }]}>
               {status.text}
             </ThemedText>
           </View>
 
-          <View style={styles.attendanceCardContent}>
+          <View style={[styles.attendanceCardContent, { marginBottom: attendanceCardContentBottom }]}>
             {/* Date Display */}
-            <View style={styles.dateContainer}>
-              <ThemedText style={styles.dateLabel}>Today</ThemedText>
-              <ThemedText style={styles.dateValue}>{formatShortDate(currentTime)}</ThemedText>
+            <View
+              style={[
+                styles.dateContainer,
+                {
+                  marginBottom: attendanceDateBlockMarginB,
+                  paddingBottom: attendanceDateBlockPaddingB,
+                },
+              ]}
+            >
+              <ThemedText
+                style={[styles.dateLabel, { fontSize: attendanceLabelFontSize, marginBottom: 2 }]}
+              >
+                Today
+              </ThemedText>
+              <ThemedText
+                style={[
+                  styles.dateValue,
+                  { fontSize: attendanceDateValueSize, lineHeight: attendanceDateValueSize + 4 },
+                ]}
+              >
+                {formatShortDate(currentTime)}
+              </ThemedText>
             </View>
 
             {/* First In / Last Out */}
-            <View style={styles.attendanceInfo}>
+            <View
+              style={[
+                styles.attendanceInfo,
+                { flexDirection: isNarrowLayout ? "column" : "row", gap: attendanceInfoGap },
+              ]}
+            >
               <View style={styles.attendanceInfoItem}>
-                <View style={styles.infoLabelRow}>
-                  <Feather name="log-in" size={14} color="#64748B" />
-                  <ThemedText style={styles.attendanceInfoLabel}>Check In</ThemedText>
+                <View style={[styles.infoLabelRow, { marginBottom: 1 }]}>
+                  <Feather name="log-in" size={attendanceMetaIconSize} color="#64748B" />
+                  <ThemedText style={[styles.attendanceInfoLabel, { fontSize: attendanceLabelFontSize }]}>
+                    Check In
+                  </ThemedText>
                 </View>
-                <ThemedText style={styles.attendanceInfoValue}>
+                <ThemedText
+                  style={[
+                    styles.attendanceInfoValue,
+                    { fontSize: attendanceTimeFontSize, lineHeight: attendanceTimeLineHeight },
+                  ]}
+                >
                   {todayAttendance?.checkIn || "-"}
                 </ThemedText>
               </View>
               <View style={styles.attendanceInfoItem}>
-                <View style={styles.infoLabelRow}>
-                  <Feather name="log-out" size={14} color="#64748B" />
-                  <ThemedText style={styles.attendanceInfoLabel}>Check Out</ThemedText>
+                <View style={[styles.infoLabelRow, { marginBottom: 1 }]}>
+                  <Feather name="log-out" size={attendanceMetaIconSize} color="#64748B" />
+                  <ThemedText style={[styles.attendanceInfoLabel, { fontSize: attendanceLabelFontSize }]}>
+                    Check Out
+                  </ThemedText>
                 </View>
-                <ThemedText style={styles.attendanceInfoValue}>
+                <ThemedText
+                  style={[
+                    styles.attendanceInfoValue,
+                    { fontSize: attendanceTimeFontSize, lineHeight: attendanceTimeLineHeight },
+                  ]}
+                >
                   {todayAttendance?.checkOut || "-"}
                 </ThemedText>
               </View>
             </View>
+
+            {(lastPunchDisplay.countryLabel || lastPunchDisplay.place) && (
+              <View style={styles.punchLocationBlock}>
+                {lastPunchDisplay.countryLabel ? (
+                  <ThemedText style={[styles.punchCountryHighlight, { fontSize: attendanceLabelFontSize + 1 }]}>
+                    Country: {lastPunchDisplay.countryLabel}
+                  </ThemedText>
+                ) : null}
+                {lastPunchDisplay.place ? (
+                  <ThemedText style={[styles.punchLocationPlace, { fontSize: attendanceLabelFontSize + 1 }]}>
+                    {lastPunchDisplay.place}
+                  </ThemedText>
+                ) : null}
+              </View>
+            )}
           </View>
 
           {/* Professional Check In Button */}
@@ -984,37 +1272,104 @@ export default function HomeScreen() {
               <View style={[
                 styles.checkInButton,
                 isDisabled && styles.checkInButtonDisabled,
-                isPunchPressed && !isDisabled && styles.checkInButtonPressed
+                isPunchPressed && !isDisabled && styles.checkInButtonPressed,
+                {
+                  paddingHorizontal: checkInButtonPaddingX,
+                  paddingVertical: checkInButtonPaddingY,
+                  minHeight: checkInButtonMinHeight,
+                  gap: isTinyPhone ? Spacing.sm : Spacing.md,
+                },
               ]}>
-                <Feather name="camera" size={20} color={isDisabled ? "#94A3B8" : "#FFFFFF"} />
-                <ThemedText style={[styles.checkInButtonText, { color: isDisabled ? "#94A3B8" : "#FFFFFF" }]}>
+                <Feather name="camera" size={isTinyPhone ? 18 : 20} color={isDisabled ? "#94A3B8" : "#FFFFFF"} />
+                <ThemedText
+                  style={[
+                    styles.checkInButtonText,
+                    {
+                      color: isDisabled ? "#94A3B8" : "#FFFFFF",
+                      fontSize: isTinyPhone ? 14 : 15,
+                    },
+                  ]}
+                >
                   {isPunching ? "Processing..." : shouldShowCheckIn ? "Check In" : "Check Out"}
                 </ThemedText>
               </View>
             </Animated.View>
           </Pressable>
-            
+
           {/* Duration Row */}
-          <View style={styles.durationRow}>
-            <Feather name="clock" size={16} color="#2563EB" />
-            <ThemedText style={styles.durationText}>
+          <View style={[styles.durationRow, { paddingTop: isTinyPhone ? Spacing.sm : Spacing.md }]}>
+            <Feather name="clock" size={durationIconSize} color="#2563EB" />
+            <ThemedText style={[styles.durationText, { fontSize: durationRowFontSize }]}>
               Duration: {todayAttendance?.totalHours ? formatTotalHours(todayAttendance.totalHours) : "-"}
             </ThemedText>
           </View>
         </View>
-            
-        <Spacer height={Spacing["2xl"]} />
+
+        <Spacer height={Spacing.xl} />
+
+        {/* Recent Notifications Section */}
+        {notificationHistory.length > 0 && (
+          <View style={styles.sectionCard}>
+            <View style={[styles.sectionHeader, { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }]}>
+              <View style={styles.sectionTitleRow}>
+                <Feather name="bell" size={20} color="#1E293B" />
+                <ThemedText type="h4" style={styles.sectionTitle}>
+                  Notifications
+                </ThemedText>
+              </View>
+              {unreadNotificationsCount > 0 && (
+                <View style={styles.notificationCountBadge}>
+                  <ThemedText style={styles.notificationCountText}>{unreadNotificationsCount}</ThemedText>
+                </View>
+              )}
+            </View>
+
+            <View style={styles.notificationBriefList}>
+              {notificationHistory.slice(0, 2).map((notification) => (
+                <Pressable
+                  key={notification.id}
+                  onPress={() => {
+                    if (!notification.is_read) markNotificationAsRead(notification.id);
+                    navigation.navigate("Notifications");
+                  }}
+                  style={styles.notificationBriefItem}
+                >
+                  <View style={[styles.statusIndicator, { backgroundColor: notification.is_read ? "#E2E8F0" : "#2563EB" }]} />
+                  <View style={{ flex: 1 }}>
+                    <ThemedText style={[styles.notificationTitleBrief, !notification.is_read && { fontWeight: '700', color: '#0F172A' }]} numberOfLines={1}>
+                      {notification.title}
+                    </ThemedText>
+                    <ThemedText style={styles.notificationBodyBrief} numberOfLines={1}>
+                      {notification.body}
+                    </ThemedText>
+                  </View>
+                  <Feather name="chevron-right" size={16} color="#94A3B8" />
+                </Pressable>
+              ))}
+
+              <Pressable
+                onPress={() => navigation.navigate("Notifications")}
+                style={styles.viewAllNotifications}
+              >
+                <ThemedText style={styles.viewAllText}>View all notifications</ThemedText>
+                <Feather name="arrow-right" size={14} color="#2563EB" />
+              </Pressable>
+            </View>
+          </View>
+        )}
+
+        <Spacer height={Spacing.xl} />
 
         {/* Error Message */}
         {punchError ? (
           <View style={styles.errorContainer}>
             <Feather name="alert-circle" size={18} color="#F44336" />
             <ThemedText style={styles.errorText}>{punchError}</ThemedText>
-            <Pressable 
+            <Pressable
               onPress={() => {
                 Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
                 setPunchError(null);
-              }} 
+              }}
               style={({ pressed }) => [
                 styles.errorCloseButton,
                 { opacity: pressed ? 0.7 : 1, transform: [{ scale: pressed ? 0.9 : 1 }] }
@@ -1022,13 +1377,18 @@ export default function HomeScreen() {
             >
               <Feather name="x" size={16} color="#F44336" />
             </Pressable>
-              </View>
+          </View>
         ) : null}
 
         {punchError ? <Spacer height={Spacing.lg} /> : null}
 
         {/* Professional Attendance Section */}
-        <View style={styles.sectionCard}>
+        <View
+          style={[
+            styles.sectionCard,
+            { marginHorizontal: sectionMarginX, padding: isTinyPhone ? Spacing.lg : Spacing.xl },
+          ]}
+        >
           <View style={styles.sectionHeader}>
             <View style={styles.sectionTitleRow}>
               <Feather name="calendar" size={20} color="#1E293B" />
@@ -1037,7 +1397,7 @@ export default function HomeScreen() {
               </ThemedText>
             </View>
           </View>
-          <View style={styles.shortcutsGrid}>
+          <View style={[styles.shortcutsGrid, { gap: shortcutsGridGap }]}>
             {attendanceShortcuts.map((shortcut, index) => (
               <Pressable
                 key={index}
@@ -1052,12 +1412,35 @@ export default function HomeScreen() {
                     opacity: pressed ? 0.8 : 1,
                     transform: [{ scale: pressed ? 0.95 : 1 }],
                   },
+                  { flex: 1, minWidth: 0, padding: shortcutItemPadding },
                 ]}
               >
-                <View style={styles.shortcutIconContainer}>
-                  <Feather name={shortcut.icon} size={24} color="#2563EB" />
+                <View
+                  style={[
+                    styles.shortcutIconContainer,
+                    { width: shortcutIconSize, height: shortcutIconSize },
+                  ]}
+                >
+                  <Feather name={shortcut.icon} size={isTinyPhone ? 20 : 24} color="#2563EB" />
                 </View>
-                <ThemedText type="small" style={styles.shortcutLabel}>
+                <ThemedText
+                  type="small"
+                  style={[
+                    styles.shortcutLabel,
+                    {
+                      fontSize: shortcutLabelFontSize,
+                      width: "100%",
+                      flexShrink: 1,
+                      letterSpacing: isTinyPhone ? -0.25 : isNarrowLayout ? -0.15 : 0,
+                    },
+                  ]}
+                  numberOfLines={shortcutLabelLines}
+                  ellipsizeMode="tail"
+                  {...(Platform.OS !== "web"
+                    ? { adjustsFontSizeToFit: true, minimumFontScale: shortcutLabelMinScale }
+                    : {})}
+                  {...(Platform.OS === "android" ? { includeFontPadding: false } : {})}
+                >
                   {shortcut.label}
                 </ThemedText>
               </Pressable>
@@ -1068,7 +1451,12 @@ export default function HomeScreen() {
         <Spacer height={Spacing.xl} />
 
         {/* Professional Workspace Section */}
-        <View style={styles.sectionCard}>
+        <View
+          style={[
+            styles.sectionCard,
+            { marginHorizontal: sectionMarginX, padding: isTinyPhone ? Spacing.lg : Spacing.xl },
+          ]}
+        >
           <View style={styles.sectionHeader}>
             <View style={styles.sectionTitleRow}>
               <Feather name="briefcase" size={20} color="#1E293B" />
@@ -1077,7 +1465,7 @@ export default function HomeScreen() {
               </ThemedText>
             </View>
           </View>
-          <View style={styles.shortcutsGrid}>
+          <View style={[styles.shortcutsGrid, { gap: shortcutsGridGap }]}>
             {workspaceShortcuts.map((shortcut, index) => {
               // Get pending count for this shortcut
               let badgeCount = 0;
@@ -1101,10 +1489,16 @@ export default function HomeScreen() {
                       opacity: pressed ? 0.8 : 1,
                       transform: [{ scale: pressed ? 0.95 : 1 }],
                     },
+                    { flex: 1, minWidth: 0, padding: shortcutItemPadding },
                   ]}
                 >
-                  <View style={styles.shortcutIconContainer}>
-                    <Feather name={shortcut.icon} size={24} color="#2563EB" />
+                  <View
+                    style={[
+                      styles.shortcutIconContainer,
+                      { width: shortcutIconSize, height: shortcutIconSize },
+                    ]}
+                  >
+                    <Feather name={shortcut.icon} size={isTinyPhone ? 20 : 24} color="#2563EB" />
                     {badgeCount > 0 && (
                       <View style={styles.badge}>
                         <ThemedText style={styles.badgeText}>
@@ -1113,7 +1507,24 @@ export default function HomeScreen() {
                       </View>
                     )}
                   </View>
-                  <ThemedText type="small" style={styles.shortcutLabel}>
+                  <ThemedText
+                    type="small"
+                    style={[
+                      styles.shortcutLabel,
+                      {
+                        fontSize: shortcutLabelFontSize,
+                        width: "100%",
+                        flexShrink: 1,
+                        letterSpacing: isTinyPhone ? -0.25 : isNarrowLayout ? -0.15 : 0,
+                      },
+                    ]}
+                    numberOfLines={shortcutLabelLines}
+                    ellipsizeMode="tail"
+                    {...(Platform.OS !== "web"
+                      ? { adjustsFontSizeToFit: true, minimumFontScale: shortcutLabelMinScale }
+                      : {})}
+                    {...(Platform.OS === "android" ? { includeFontPadding: false } : {})}
+                  >
                     {shortcut.label}
                   </ThemedText>
                 </Pressable>
@@ -1122,8 +1533,8 @@ export default function HomeScreen() {
           </View>
         </View>
 
-      <Spacer height={Spacing["3xl"]} />
-    </ScreenScrollView>
+        <Spacer height={Spacing["3xl"]} />
+      </ScreenScrollView>
     </View>
   );
 }
@@ -1134,14 +1545,11 @@ const styles = StyleSheet.create({
     backgroundColor: "#F8FAFC",
   },
   greetingSection: {
-    paddingHorizontal: Spacing["2xl"],
-    paddingTop: Spacing.xl + 8,
-    paddingBottom: Spacing.xl,
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "flex-start",
     backgroundColor: "#FFFFFF",
-    borderBottomWidth: 1,
+    borderBottomWidth: StyleSheet.hairlineWidth,
     borderBottomColor: "#E2E8F0",
   },
   greetingContent: {
@@ -1154,19 +1562,10 @@ const styles = StyleSheet.create({
     marginBottom: Spacing.xs,
   },
   greetingText: {
-    fontSize: 14,
-    fontWeight: "500",
-    color: "#64748B",
-    marginBottom: 4,
-    textTransform: "uppercase",
-    letterSpacing: 0.5,
+    color: "#CA8A04",
   },
   welcomeText: {
-    fontSize: 28,
-    fontWeight: "700",
-    color: "#0F172A",
-    letterSpacing: -0.5,
-    lineHeight: 36,
+    /* fontSize / lineHeight set per screen in JSX */
   },
   timeDateContainer: {
     flexDirection: "row",
@@ -1214,9 +1613,9 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     alignSelf: "flex-start",
-    marginBottom: Spacing.lg,
+    marginBottom: Spacing.md,
     paddingHorizontal: Spacing.md,
-    paddingVertical: Spacing.xs + 2,
+    paddingVertical: Spacing.xs + 1,
     borderRadius: BorderRadius.md,
     backgroundColor: "#F1F5F9",
   },
@@ -1233,11 +1632,11 @@ const styles = StyleSheet.create({
     letterSpacing: 0.5,
   },
   attendanceCardContent: {
-    marginBottom: Spacing.xl,
+    marginBottom: Spacing.lg,
   },
   dateContainer: {
-    marginBottom: Spacing.lg,
-    paddingBottom: Spacing.lg,
+    marginBottom: Spacing.md,
+    paddingBottom: Spacing.md,
     borderBottomWidth: 1,
     borderBottomColor: "#E2E8F0",
   },
@@ -1245,7 +1644,7 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: "500",
     color: "#64748B",
-    marginBottom: 4,
+    marginBottom: 3,
     textTransform: "uppercase",
     letterSpacing: 0.5,
   },
@@ -1280,16 +1679,16 @@ const styles = StyleSheet.create({
   checkInButtonContainer: {
     borderRadius: BorderRadius.md,
     overflow: "hidden",
-    marginBottom: Spacing.lg,
+    marginBottom: Spacing.md,
   },
   checkInButton: {
     paddingHorizontal: Spacing.xl,
-    paddingVertical: Spacing.lg,
+    paddingVertical: Spacing.md,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
     gap: Spacing.md,
-    minHeight: 56,
+    minHeight: 48,
     backgroundColor: "#2563EB",
   },
   checkInButtonDisabled: {
@@ -1303,11 +1702,28 @@ const styles = StyleSheet.create({
     fontWeight: "600",
     letterSpacing: 0.3,
   },
+  punchCountryHighlight: {
+    color: "#0F172A",
+    fontWeight: "700",
+    marginBottom: 4,
+    marginTop: 2,
+  },
+  punchLocationBlock: {
+    marginTop: Spacing.sm,
+    paddingTop: Spacing.sm,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: "#E2E8F0",
+  },
+  punchLocationPlace: {
+    color: "#0F172A",
+    fontWeight: "600",
+    marginBottom: 2,
+  },
   durationRow: {
     flexDirection: "row",
     alignItems: "center",
     gap: Spacing.sm,
-    paddingTop: Spacing.lg,
+    paddingTop: Spacing.md,
     borderTopWidth: 1,
     borderTopColor: "#E2E8F0",
   },
@@ -1345,15 +1761,16 @@ const styles = StyleSheet.create({
   },
   shortcutsGrid: {
     flexDirection: "row",
-    flexWrap: "wrap",
+    flexWrap: "nowrap",
+    alignItems: "stretch",
     gap: Spacing.md,
   },
   shortcutItem: {
-    width: "30%",
-    aspectRatio: 1,
+    flex: 1,
+    minWidth: 0,
     borderRadius: BorderRadius.md,
     alignItems: "center",
-    justifyContent: "center",
+    justifyContent: "flex-start",
     padding: Spacing.md,
     backgroundColor: "transparent",
   },
@@ -1363,7 +1780,7 @@ const styles = StyleSheet.create({
   },
   shortcutIconContainer: {
     position: "relative",
-    marginBottom: Spacing.md,
+    marginBottom: Spacing.sm,
     width: 56,
     height: 56,
     borderRadius: BorderRadius.md,
@@ -1392,6 +1809,7 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: "600",
     color: "#334155",
+    alignSelf: "stretch",
   },
   badge: {
     position: "absolute",
@@ -1436,5 +1854,56 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     padding: Spacing.xs,
+  },
+  notificationCountBadge: {
+    backgroundColor: "#EF4444",
+    borderRadius: 10,
+    minWidth: 20,
+    height: 20,
+    justifyContent: "center",
+    alignItems: "center",
+    paddingHorizontal: 6,
+  },
+  notificationCountText: {
+    color: "#FFFFFF",
+    fontSize: 10,
+    fontWeight: "700",
+  },
+  notificationBriefList: {
+    marginTop: Spacing.sm,
+  },
+  notificationBriefItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: Spacing.md,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F1F5F9',
+    gap: Spacing.md,
+  },
+  statusIndicator: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+  },
+  notificationTitleBrief: {
+    fontSize: 14,
+    color: '#334155',
+    marginBottom: 2,
+  },
+  notificationBodyBrief: {
+    fontSize: 12,
+    color: '#64748B',
+  },
+  viewAllNotifications: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingTop: Spacing.md,
+    gap: Spacing.xs,
+  },
+  viewAllText: {
+    fontSize: 13,
+    color: '#2563EB',
+    fontWeight: '600',
   },
 });

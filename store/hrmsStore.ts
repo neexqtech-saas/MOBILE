@@ -1,44 +1,113 @@
 import { create } from "zustand";
 import { apiService, OrganizationSettings } from "@/services/api";
 import { storageService } from "@/services/storage";
-import type { AttendanceHistoryItem, TaskAPI, AssignedProject } from "@/services/api";
+import type {
+  AttendanceHistoryItem,
+  TaskAPI,
+  AssignedProject,
+  NotificationHistoryItem,
+  PunchCountryMeta,
+} from "@/services/api";
 import * as ImagePicker from "expo-image-picker";
 import { Platform, Alert } from "react-native";
 import { validateFaceImage } from "@/utils/faceDetection";
 import * as Notifications from "expo-notifications";
 import * as Device from "expo-device";
 
-// Helper function to get FCM/Expo Push Token
+// Helper function to get FCM Token (Native Firebase or Expo Push Token)
 async function getFcmToken(): Promise<string | null> {
   try {
+    // Web platform pe FCM token supported nahi - skip karo
+    if (Platform.OS === 'web') {
+      console.log('🌐 Web platform detected - FCM token not supported on web, skipping');
+      return null;
+    }
+
     // Check if running on a physical device
     if (!Device.isDevice) {
       console.warn('⚠️ FCM tokens are only available on physical devices');
       return null;
     }
 
-    // Request notification permissions
-    const { status: existingStatus } = await Notifications.getPermissionsAsync();
-    let finalStatus = existingStatus;
-    
-    if (existingStatus !== 'granted') {
-      const { status } = await Notifications.requestPermissionsAsync();
-      finalStatus = status;
-    }
-    
-    if (finalStatus !== 'granted') {
-      console.warn('⚠️ Notification permissions not granted');
-      return null;
+    // Try to use native Firebase FCM token (for development builds with @react-native-firebase)
+    const expoConstants = require('expo-constants').default;
+    const isExpoGo = expoConstants?.appOwnership === 'expo';
+
+    if (!isExpoGo) {
+      try {
+        // Check if Firebase SDK is available (only in custom dev builds, not Expo Go)
+        let messaging;
+        try {
+          messaging = require('@react-native-firebase/messaging').default;
+        } catch (requireError) {
+          throw new Error('Firebase SDK not available. Using Expo Push Token fallback.');
+        }
+
+        // Request notification permissions
+        const authStatus = await messaging().requestPermission();
+        const enabled =
+          authStatus === messaging.AuthorizationStatus.AUTHORIZED ||
+          authStatus === messaging.AuthorizationStatus.PROVISIONAL;
+
+        if (!enabled) {
+          console.warn('⚠️ Notification permissions not granted');
+          return null;
+        }
+
+        // Get native FCM token (Android format: APA91bHk3xYz... or new format)
+        const fcmToken = await messaging().getToken();
+
+        if (fcmToken && fcmToken.length > 20) {
+          console.log('✅ Native FCM Token obtained:', fcmToken.substring(0, 30) + '...');
+          return fcmToken;
+        }
+      } catch (firebaseError) {
+        console.warn('⚠️ Native Firebase FCM not available, falling back to Expo...');
+      }
+    } else {
+      console.log('💡 Running in Expo Go - Skipping native Firebase check');
     }
 
-    // Get the Expo Push Token (which works as FCM token for Expo apps)
-    const tokenData = await Notifications.getExpoPushTokenAsync();
-    const token = tokenData.data;
-    
-    console.log('📱 FCM/Expo Push Token obtained:', token);
-    return token;
+    // Fallback to Expo Push Token if Firebase not available (Expo Go or missing SDK)
+    try {
+      console.log('💡 Using Native Device Token (FCM) fallback...');
+
+      // Request notification permissions
+      const { status: existingStatus } = await Notifications.getPermissionsAsync();
+      let finalStatus = existingStatus;
+
+      if (existingStatus !== 'granted') {
+        const { status } = await Notifications.requestPermissionsAsync();
+        finalStatus = status;
+      }
+
+      if (finalStatus !== 'granted') {
+        console.warn('⚠️ Notification permissions not granted by user');
+        return null;
+      }
+
+      // Get the Native Device Token (FCM format)
+      const tokenData = await Notifications.getDevicePushTokenAsync();
+      const token = tokenData.data;
+
+      if (token) {
+        console.log('✅ Native FCM Token obtained:', token.substring(0, 30) + '...');
+        console.log('📱 Token info:', {
+          length: token.length,
+          type: 'native_fcm',
+          preview: token.substring(0, 30) + '...'
+        });
+        return token;
+      } else {
+        console.warn('⚠️ Native device token is null or empty');
+        return null;
+      }
+    } catch (error) {
+      console.error('❌ Error getting native device token:', error);
+      return null;
+    }
   } catch (error) {
-    console.error('❌ Error getting FCM token:', error);
+    console.error('❌ Error in getFcmToken wrapper:', error);
     return null;
   }
 }
@@ -84,6 +153,19 @@ export interface AttendanceRecord {
   lastLoginStatus?: string | null; // "checkin" or "checkout"
   shiftName?: string | null; // Shift name from API
   multipleEntries?: MultipleCheckEntry[]; // Multiple check-in/check-out entries
+  /** API datetime string (UTC wall) before UI formatting */
+  checkInRaw?: string | null;
+  checkOutRaw?: string | null;
+  checkInLatitude?: number | null;
+  checkInLongitude?: number | null;
+  checkOutLatitude?: number | null;
+  checkOutLongitude?: number | null;
+  checkInLocation?: string | null;
+  checkOutLocation?: string | null;
+  checkInCountry?: string | null;
+  checkInCountryCode?: string | null;
+  checkOutCountry?: string | null;
+  checkOutCountryCode?: string | null;
 }
 
 export interface LeaveRequest {
@@ -176,6 +258,8 @@ interface HRMSState {
   holidays: Holiday[];
   announcements: Announcement[];
   notificationsEnabled: boolean;
+  notificationHistory: NotificationHistoryItem[];
+  unreadNotificationsCount: number;
   organizationSettings: OrganizationSettings | null;
 
   login: (username: string, password: string) => Promise<{ success: boolean; error?: string }>;
@@ -183,15 +267,25 @@ interface HRMSState {
   checkAuth: () => Promise<void>;
   completeOnboarding: () => void;
   fetchOrganizationSettings: () => Promise<void>;
-  checkIn: (base64Images?: string[], latitude?: number, longitude?: number) => Promise<{ success: boolean; error?: string }>;
-  checkOut: (base64Images?: string[], latitude?: number, longitude?: number) => Promise<{ success: boolean; error?: string }>;
+  checkIn: (
+    base64Images?: string[],
+    latitude?: number,
+    longitude?: number,
+    countryMeta?: PunchCountryMeta | null
+  ) => Promise<{ success: boolean; error?: string }>;
+  checkOut: (
+    base64Images?: string[],
+    latitude?: number,
+    longitude?: number,
+    countryMeta?: PunchCountryMeta | null
+  ) => Promise<{ success: boolean; error?: string }>;
   fetchAttendanceHistory: (orgId?: string, fromDate?: string, toDate?: string) => Promise<void>;
   fetchTodayAttendance: () => Promise<void>;
   fetchAttendanceAfterPunch: () => Promise<void>;
   fetchAttendanceByDate: (date: string) => Promise<AttendanceRecord | null>;
   applyLeave: (leave: Omit<LeaveRequest, "id" | "status" | "appliedDate">) => Promise<{ success: boolean; error?: string }>;
   fetchLeaveTypes: () => Promise<{ success: boolean; error?: string }>;
-  fetchTasks: () => Promise<{ success: boolean; error?: string }>;
+  fetchTasks: (fromDate?: string, toDate?: string) => Promise<{ success: boolean; error?: string }>;
   updateTaskStatus: (taskId: string, status: Task["status"], comment?: string) => Promise<{ success: boolean; error?: string }>;
   addTaskComment: (taskId: string, text: string) => void;
   toggleHolidayFavorite: (holidayId: string) => void;
@@ -201,6 +295,9 @@ interface HRMSState {
   updateProfile: (updates: Partial<Employee>) => void;
   captureAndUploadProfilePhoto: () => Promise<{ success: boolean; error?: string }>;
   uploadProfilePhoto: (base64Image: string) => Promise<{ success: boolean; error?: string }>;
+  fetchNotificationHistory: () => Promise<void>;
+  markNotificationAsRead: (id: string) => Promise<void>;
+  markAllNotificationsAsRead: () => Promise<void>;
 }
 
 const mockEmployee: Employee = {
@@ -221,16 +318,16 @@ const mockEmployee: Employee = {
 const generateAttendanceHistory = (): AttendanceRecord[] => {
   const history: AttendanceRecord[] = [];
   const today = new Date();
-  
+
   for (let i = 1; i <= 20; i++) {
     const date = new Date(today);
     date.setDate(date.getDate() - i);
-    
+
     if (date.getDay() === 0 || date.getDay() === 6) continue;
-    
+
     const isLate = Math.random() > 0.8;
     const isAbsent = Math.random() > 0.9;
-    
+
     history.push({
       id: `att-${i}`,
       date: date.toISOString().split("T")[0],
@@ -241,7 +338,7 @@ const generateAttendanceHistory = (): AttendanceRecord[] => {
       location: "Office - Main Building",
     });
   }
-  
+
   return history;
 };
 
@@ -440,13 +537,15 @@ export const useHRMSStore = create<HRMSState>((set, get) => ({
   holidays: mockHolidays,
   announcements: mockAnnouncements,
   notificationsEnabled: true,
+  notificationHistory: [],
+  unreadNotificationsCount: 0,
   organizationSettings: null,
 
   login: async (username: string, password: string) => {
     set({ isLoading: true });
     try {
       const response = await apiService.login({ username, password });
-      
+
       // Save tokens and user info to storage
       await storageService.saveAuthData({
         access_token: response.access_token,
@@ -459,10 +558,10 @@ export const useHRMSStore = create<HRMSState>((set, get) => ({
       try {
         const sessionInfo = await apiService.getSessionInfo();
         console.log('📋 Session Info Response:', sessionInfo);
-        
+
         // Check if response is successful (status 200 or success: true)
         const isSuccess = (sessionInfo.status === 200 || sessionInfo.success === true);
-        
+
         if (isSuccess && sessionInfo.data) {
           const userData = sessionInfo.data;
           console.log('📋 User Data from Session Info:', {
@@ -476,11 +575,11 @@ export const useHRMSStore = create<HRMSState>((set, get) => ({
             role: userData.role,
             allKeys: Object.keys(userData)
           });
-          
+
           // Use admin_id if available, otherwise use user_id as fallback
           // For some users, adminId might be their own userId
           const adminId = userData.admin_id || userData.user_id;
-          
+
           // Extract site_id from session info for attendance API calls
           const siteId = userData.site_id;
           if (!siteId) {
@@ -488,7 +587,7 @@ export const useHRMSStore = create<HRMSState>((set, get) => ({
           } else {
             console.log('✅ siteId extracted from session info:', siteId);
           }
-          
+
           // Extract first assigned project if available
           let assignedProject: AssignedProject | undefined;
           console.log('🔍 Checking assigned_projects in session info:', {
@@ -497,7 +596,7 @@ export const useHRMSStore = create<HRMSState>((set, get) => ({
             length: userData.assigned_projects?.length,
             assignedProjects: userData.assigned_projects
           });
-          
+
           if (userData.assigned_projects && Array.isArray(userData.assigned_projects) && userData.assigned_projects.length > 0) {
             assignedProject = userData.assigned_projects[0];
             console.log('✅ Assigned project found and extracted:', {
@@ -509,9 +608,9 @@ export const useHRMSStore = create<HRMSState>((set, get) => ({
           } else {
             console.log('ℹ️ No assigned projects in session info');
           }
-          
-          set({ 
-            isAuthenticated: true, 
+
+          set({
+            isAuthenticated: true,
             isLoading: false,
             employee: {
               ...get().employee,
@@ -525,7 +624,7 @@ export const useHRMSStore = create<HRMSState>((set, get) => ({
               assignedProject: assignedProject, // Save first assigned project if available
             }
           });
-          
+
           // Verify assignedProject was saved
           const savedEmployee = get().employee;
           console.log('💾 Employee state after save:', {
@@ -534,7 +633,7 @@ export const useHRMSStore = create<HRMSState>((set, get) => ({
             projectName: savedEmployee.assignedProject?.project_name,
             siteId: savedEmployee.siteId
           });
-          
+
           // Log if adminId was missing and we used fallback
           if (!userData.admin_id) {
             console.warn('⚠️ admin_id missing in session info response. Using userId as fallback:', {
@@ -563,7 +662,7 @@ export const useHRMSStore = create<HRMSState>((set, get) => ({
 
           // Store is_photo_updated flag in employee state
           const isPhotoUpdated = userData.is_photo_updated !== false; // Default to true if not explicitly false
-          
+
           set((state) => ({
             employee: {
               ...state.employee,
@@ -595,8 +694,8 @@ export const useHRMSStore = create<HRMSState>((set, get) => ({
         } else {
           console.warn('⚠️ Session info response missing success or data:', sessionInfo);
           // Fallback if session info fails
-          set({ 
-            isAuthenticated: true, 
+          set({
+            isAuthenticated: true,
             isLoading: false,
             employee: {
               ...get().employee,
@@ -608,8 +707,8 @@ export const useHRMSStore = create<HRMSState>((set, get) => ({
       } catch (sessionError) {
         console.error('❌ Error fetching session info:', sessionError);
         // Still set authenticated even if session info fails
-        set({ 
-          isAuthenticated: true, 
+        set({
+          isAuthenticated: true,
           isLoading: false,
           employee: {
             ...get().employee,
@@ -625,6 +724,9 @@ export const useHRMSStore = create<HRMSState>((set, get) => ({
       // Fetch organization settings after login
       await get().fetchOrganizationSettings();
 
+      // Fetch notifications after login
+      await get().fetchNotificationHistory();
+
       return { success: true };
     } catch (error) {
       set({ isLoading: false });
@@ -637,16 +739,16 @@ export const useHRMSStore = create<HRMSState>((set, get) => ({
     try {
       // Clear all auth data from storage (access token, refresh token, user data)
       await storageService.clearAuthData();
-      
+
       // Verify access token is cleared
       const tokenAfterLogout = await storageService.getAccessToken();
       if (tokenAfterLogout) {
         console.warn('⚠️ Access token still exists after logout, clearing again...');
         await storageService.clearAuthData();
       }
-      
+
       // Reset all state to initial values
-      set({ 
+      set({
         isAuthenticated: false,
         isLoading: false,
         todayAttendance: null,
@@ -664,12 +766,12 @@ export const useHRMSStore = create<HRMSState>((set, get) => ({
         notificationsEnabled: true,
         organizationSettings: null,
       });
-      
+
       console.log('✅ Logout successful - all state cleared, redirecting to login page');
     } catch (error) {
       console.error('❌ Error during logout:', error);
       // Still clear the state even if storage fails
-      set({ 
+      set({
         isAuthenticated: false,
         isLoading: false,
         todayAttendance: null,
@@ -690,15 +792,15 @@ export const useHRMSStore = create<HRMSState>((set, get) => ({
       if (isAuth) {
         const userId = await storageService.getUserId();
         const userRole = await storageService.getUserRole();
-        
+
         // Fetch session info to get employee name and details
         try {
           const sessionInfo = await apiService.getSessionInfo();
           console.log('📋 Session Info Response (checkAuth):', sessionInfo);
-          
+
           // Check if response is successful (status 200 or success: true)
           const isSuccess = (sessionInfo.status === 200 || sessionInfo.success === true);
-          
+
           if (isSuccess && sessionInfo.data) {
             const userData = sessionInfo.data;
             console.log('📋 User Data from Session Info (checkAuth):', {
@@ -712,10 +814,10 @@ export const useHRMSStore = create<HRMSState>((set, get) => ({
               role: userData.role,
               allKeys: Object.keys(userData)
             });
-            
+
             // Use admin_id if available, otherwise use user_id as fallback
             const adminId = userData.admin_id || userData.user_id;
-            
+
             // Extract site_id from session info for attendance API calls
             const siteId = userData.site_id;
             if (!siteId) {
@@ -723,7 +825,7 @@ export const useHRMSStore = create<HRMSState>((set, get) => ({
             } else {
               console.log('✅ siteId extracted from session info (checkAuth):', siteId);
             }
-            
+
             // Extract first assigned project if available
             let assignedProject: AssignedProject | undefined;
             console.log('🔍 Checking assigned_projects in session info (checkAuth):', {
@@ -732,7 +834,7 @@ export const useHRMSStore = create<HRMSState>((set, get) => ({
               length: userData.assigned_projects?.length,
               assignedProjects: userData.assigned_projects
             });
-            
+
             if (userData.assigned_projects && Array.isArray(userData.assigned_projects) && userData.assigned_projects.length > 0) {
               assignedProject = userData.assigned_projects[0];
               console.log('✅ Assigned project found (checkAuth):', {
@@ -744,8 +846,8 @@ export const useHRMSStore = create<HRMSState>((set, get) => ({
             } else {
               console.log('ℹ️ No assigned projects in session info (checkAuth)');
             }
-            
-            set({ 
+
+            set({
               isAuthenticated: true,
               employee: {
                 ...get().employee,
@@ -760,7 +862,7 @@ export const useHRMSStore = create<HRMSState>((set, get) => ({
                 isPhotoUpdated: userData.is_photo_updated ?? get().employee.isPhotoUpdated ?? true, // Store flag, default to true
               }
             });
-            
+
             // Verify assignedProject was saved
             const savedEmployee = get().employee;
             console.log('💾 Employee state after save (checkAuth):', {
@@ -770,7 +872,7 @@ export const useHRMSStore = create<HRMSState>((set, get) => ({
               siteId: savedEmployee.siteId,
               isPhotoUpdated: savedEmployee.isPhotoUpdated
             });
-            
+
             // Log if adminId was missing and we used fallback
             if (!userData.admin_id) {
               console.warn('⚠️ admin_id missing in session info response (checkAuth). Using userId as fallback:', {
@@ -781,7 +883,22 @@ export const useHRMSStore = create<HRMSState>((set, get) => ({
             } else {
               console.log('✅ adminId set from session info (checkAuth):', adminId);
             }
-            
+
+            // Store FCM token after successful auth check (refresh token if needed)
+            try {
+              const fcmToken = await getFcmToken();
+              if (fcmToken && userData.user_id) {
+                console.log('📱 Storing FCM token for user (checkAuth):', userData.user_id);
+                await apiService.updateFcmToken(userData.user_id, fcmToken);
+                console.log('✅ FCM token stored successfully (checkAuth)');
+              } else {
+                console.warn('⚠️ FCM token not available or user_id missing (checkAuth)');
+              }
+            } catch (fcmError) {
+              console.error('❌ Error storing FCM token (checkAuth):', fcmError);
+              // Don't fail auth check if FCM token storage fails
+            }
+
             // Check if is_photo_updated is false - then capture selfie immediately
             // Only open camera if flag is explicitly false AND not already updated in state
             if (userData.is_photo_updated === false) {
@@ -806,7 +923,7 @@ export const useHRMSStore = create<HRMSState>((set, get) => ({
           } else {
             console.warn('⚠️ Session info response missing success or data (checkAuth):', sessionInfo);
             // Fallback
-            set({ 
+            set({
               isAuthenticated: true,
               employee: {
                 ...get().employee,
@@ -818,7 +935,7 @@ export const useHRMSStore = create<HRMSState>((set, get) => ({
         } catch (sessionError) {
           console.error('❌ Error fetching session info (checkAuth):', sessionError);
           // Fallback if session info fails
-          set({ 
+          set({
             isAuthenticated: true,
             employee: {
               ...get().employee,
@@ -834,6 +951,8 @@ export const useHRMSStore = create<HRMSState>((set, get) => ({
         await get().fetchAttendanceHistory();
         // Fetch organization settings
         await get().fetchOrganizationSettings();
+        // Fetch notifications
+        await get().fetchNotificationHistory();
       }
     } catch (error) {
       console.error('Error checking auth:', error);
@@ -845,10 +964,10 @@ export const useHRMSStore = create<HRMSState>((set, get) => ({
     set({ hasSeenOnboarding: true });
   },
 
-  checkIn: async (base64Images?: string[], latitude?: number, longitude?: number) => {
+  checkIn: async (base64Images?: string[], latitude?: number, longitude?: number, countryMeta?: PunchCountryMeta | null) => {
     const state = get();
     const userId = state.employee.id;
-    
+
     if (!userId) {
       return { success: false, error: "User ID not found. Please login again." };
     }
@@ -866,7 +985,15 @@ export const useHRMSStore = create<HRMSState>((set, get) => ({
     });
 
     try {
-      const response = await apiService.checkInOut(userId, base64Images, latitude, longitude, true, projectId);
+      const response = await apiService.checkInOut(
+        userId,
+        base64Images,
+        latitude,
+        longitude,
+        true,
+        projectId,
+        countryMeta ?? null
+      );
       // Don't fetch here - let the caller handle it
       return { success: true };
     } catch (error) {
@@ -875,10 +1002,10 @@ export const useHRMSStore = create<HRMSState>((set, get) => ({
     }
   },
 
-  checkOut: async (base64Images?: string[], latitude?: number, longitude?: number) => {
+  checkOut: async (base64Images?: string[], latitude?: number, longitude?: number, countryMeta?: PunchCountryMeta | null) => {
     const state = get();
     const userId = state.employee.id;
-    
+
     if (!userId) {
       return { success: false, error: "User ID not found. Please login again." };
     }
@@ -892,7 +1019,15 @@ export const useHRMSStore = create<HRMSState>((set, get) => ({
     });
 
     try {
-      const response = await apiService.checkInOut(userId, base64Images, latitude, longitude, false, projectId);
+      const response = await apiService.checkInOut(
+        userId,
+        base64Images,
+        latitude,
+        longitude,
+        false,
+        projectId,
+        countryMeta ?? null
+      );
       // Don't fetch here - let the caller handle it
       return { success: true };
     } catch (error) {
@@ -905,7 +1040,7 @@ export const useHRMSStore = create<HRMSState>((set, get) => ({
     const state = get();
     const userId = state.employee.id;
     const siteId = state.employee.siteId;
-    
+
     if (!userId || !siteId) {
       console.log('Cannot fetch today attendance: missing userId or siteId', { userId, siteId });
       return;
@@ -918,18 +1053,18 @@ export const useHRMSStore = create<HRMSState>((set, get) => ({
       const month = String(now.getMonth() + 1).padStart(2, '0');
       const day = String(now.getDate()).padStart(2, '0');
       const today = `${year}-${month}-${day}`;
-      
+
       // Use employee-attendance API with site_id and user_id to get today's attendance
       const response = await apiService.getUserAttendanceByDate(siteId, userId, today);
-      
+
       if (response.data && response.data.length > 0) {
         // Get the first (and should be only) attendance record for this user
         const attendance = response.data[0];
-        
+
         if (attendance) {
           const now = new Date();
           const dateStr = attendance.attendance_date || now.toISOString().split("T")[0];
-          
+
           // Convert backend format to app format (hours and minutes only)
           const formatTime = (timeStr: string | null): string | null => {
             if (!timeStr) return null;
@@ -956,7 +1091,11 @@ export const useHRMSStore = create<HRMSState>((set, get) => ({
           }
 
           // Determine status - check if late
-          let status: AttendanceRecord["status"] = attendance.attendance_status.toLowerCase() as AttendanceRecord["status"];
+          let status: AttendanceRecord["status"] = "absent";
+          if (attendance.attendance_status) {
+            status = attendance.attendance_status.toLowerCase() as AttendanceRecord["status"];
+          }
+
           if (attendance.is_late && status === "present") {
             status = "late";
           }
@@ -980,16 +1119,28 @@ export const useHRMSStore = create<HRMSState>((set, get) => ({
           }
 
           const attendanceRecord: AttendanceRecord = {
-            id: attendance.id.toString(),
+            id: attendance.id ? attendance.id.toString() : "", // Handle null id safely
             date: dateStr,
             checkIn: formatTime(attendance.check_in),
             checkOut: formatTime(attendance.check_out),
             status: status,
             totalHours: totalHours,
-            location: "Office", // Can be enhanced with location data
+            location: attendance.check_in_location || attendance.check_out_location || "Office",
             lastLoginStatus: attendance.last_login_status || null,
             shiftName: attendance.shift_name || null,
             multipleEntries: multipleEntries.length > 0 ? multipleEntries : undefined,
+            checkInRaw: attendance.check_in ?? null,
+            checkOutRaw: attendance.check_out ?? null,
+            checkInLatitude: attendance.check_in_latitude ?? null,
+            checkInLongitude: attendance.check_in_longitude ?? null,
+            checkOutLatitude: attendance.check_out_latitude ?? null,
+            checkOutLongitude: attendance.check_out_longitude ?? null,
+            checkInLocation: attendance.check_in_location ?? null,
+            checkOutLocation: attendance.check_out_location ?? null,
+            checkInCountry: attendance.check_in_country ?? null,
+            checkInCountryCode: attendance.check_in_country_code ?? null,
+            checkOutCountry: attendance.check_out_country ?? null,
+            checkOutCountryCode: attendance.check_out_country_code ?? null,
           };
 
           set({ todayAttendance: attendanceRecord });
@@ -1012,7 +1163,7 @@ export const useHRMSStore = create<HRMSState>((set, get) => ({
     const state = get();
     const userId = state.employee.id;
     const siteId = state.employee.siteId;
-    
+
     if (!userId || !siteId) {
       console.log('Cannot fetch attendance: missing userId or siteId', { userId, siteId });
       return;
@@ -1026,19 +1177,19 @@ export const useHRMSStore = create<HRMSState>((set, get) => ({
       const day = String(now.getDate()).padStart(2, '0');
       const today = `${year}-${month}-${day}`;
       console.log('Fetching attendance for user:', { siteId, userId, today });
-      
+
       // Call employee-attendance API with site_id and user_id
       const response = await apiService.getUserAttendanceByDate(siteId, userId, today);
       console.log('Attendance API response (fetchAttendanceAfterPunch):', JSON.stringify(response, null, 2));
-      
+
       if (response.data && response.data.length > 0) {
         // Get the first (and should be only) attendance record for this user
         const attendance = response.data[0];
-        
+
         if (attendance) {
           const now = new Date();
           const dateStr = attendance.attendance_date || now.toISOString().split("T")[0];
-          
+
           // Convert backend format to app format (hours and minutes only)
           const formatTime = (timeStr: string | null): string | null => {
             if (!timeStr) return null;
@@ -1065,7 +1216,11 @@ export const useHRMSStore = create<HRMSState>((set, get) => ({
           }
 
           // Determine status - check if late
-          let status: AttendanceRecord["status"] = attendance.attendance_status.toLowerCase() as AttendanceRecord["status"];
+          let status: AttendanceRecord["status"] = "absent";
+          if (attendance.attendance_status) {
+            status = attendance.attendance_status.toLowerCase() as AttendanceRecord["status"];
+          }
+
           if (attendance.is_late && status === "present") {
             status = "late";
           }
@@ -1089,16 +1244,28 @@ export const useHRMSStore = create<HRMSState>((set, get) => ({
           }
 
           const attendanceRecord: AttendanceRecord = {
-            id: attendance.id.toString(),
+            id: attendance.id ? attendance.id.toString() : "", // Handle null id safely
             date: dateStr,
             checkIn: formatTime(attendance.check_in),
             checkOut: formatTime(attendance.check_out),
             status: status,
             totalHours: totalHours,
-            location: "Office",
+            location: attendance.check_in_location || attendance.check_out_location || "Office",
             lastLoginStatus: attendance.last_login_status || null,
             shiftName: attendance.shift_name || null,
             multipleEntries: multipleEntries.length > 0 ? multipleEntries : undefined,
+            checkInRaw: attendance.check_in ?? null,
+            checkOutRaw: attendance.check_out ?? null,
+            checkInLatitude: attendance.check_in_latitude ?? null,
+            checkInLongitude: attendance.check_in_longitude ?? null,
+            checkOutLatitude: attendance.check_out_latitude ?? null,
+            checkOutLongitude: attendance.check_out_longitude ?? null,
+            checkInLocation: attendance.check_in_location ?? null,
+            checkOutLocation: attendance.check_out_location ?? null,
+            checkInCountry: attendance.check_in_country ?? null,
+            checkInCountryCode: attendance.check_in_country_code ?? null,
+            checkOutCountry: attendance.check_out_country ?? null,
+            checkOutCountryCode: attendance.check_out_country_code ?? null,
           };
 
           set({ todayAttendance: attendanceRecord });
@@ -1119,7 +1286,7 @@ export const useHRMSStore = create<HRMSState>((set, get) => ({
     const userId = state.employee.id;
     const employeeOrgId = orgId || state.employee.organizationId;
     const adminId = state.employee.adminId;
-    
+
     console.log('📊 fetchAttendanceHistory called:', {
       userId,
       employeeOrgId,
@@ -1127,10 +1294,10 @@ export const useHRMSStore = create<HRMSState>((set, get) => ({
       fromDate,
       toDate
     });
-    
+
     // Try to use adminId if orgId is not available (some APIs might use adminId instead)
     const finalOrgId = employeeOrgId || adminId;
-    
+
     if (!userId || !finalOrgId) {
       console.warn('⚠️ Cannot fetch attendance history: missing userId or orgId/adminId', {
         userId,
@@ -1148,7 +1315,7 @@ export const useHRMSStore = create<HRMSState>((set, get) => ({
         fromDate,
         toDate
       });
-      
+
       const response = await apiService.getAttendanceHistory(
         finalOrgId,
         userId,
@@ -1207,9 +1374,21 @@ export const useHRMSStore = create<HRMSState>((set, get) => ({
           checkOut: formatTime(item.check_out),
           status: item.attendance_status.toLowerCase() as AttendanceRecord["status"],
           totalHours: totalHours,
-          location: "Office",
+          location: item.check_in_location || item.check_out_location || "Office",
           shiftName: item.shift_name || null,
           multipleEntries: multipleEntries.length > 0 ? multipleEntries : undefined,
+          checkInRaw: item.check_in ?? null,
+          checkOutRaw: item.check_out ?? null,
+          checkInLatitude: item.check_in_latitude ?? null,
+          checkInLongitude: item.check_in_longitude ?? null,
+          checkOutLatitude: item.check_out_latitude ?? null,
+          checkOutLongitude: item.check_out_longitude ?? null,
+          checkInLocation: item.check_in_location ?? null,
+          checkOutLocation: item.check_out_location ?? null,
+          checkInCountry: item.check_in_country ?? null,
+          checkInCountryCode: item.check_in_country_code ?? null,
+          checkOutCountry: item.check_out_country ?? null,
+          checkOutCountryCode: item.check_out_country_code ?? null,
         };
       });
 
@@ -1225,7 +1404,7 @@ export const useHRMSStore = create<HRMSState>((set, get) => ({
     const state = get();
     const userId = state.employee.id;
     const siteId = state.employee.siteId;
-    
+
     if (!userId || !siteId) {
       console.log('❌ Cannot fetch attendance by date: missing userId or siteId', { userId, siteId });
       return null;
@@ -1233,7 +1412,7 @@ export const useHRMSStore = create<HRMSState>((set, get) => ({
 
     try {
       console.log('📅 Fetching attendance for date:', { siteId, userId, date });
-      
+
       // Call employee-attendance API with site_id and user_id for specific date
       const response = await apiService.getUserAttendanceByDate(siteId, userId, date);
       console.log('📥 Attendance API response for date:', date);
@@ -1244,10 +1423,10 @@ export const useHRMSStore = create<HRMSState>((set, get) => ({
         status: response.status,
         message: response.message
       });
-      
+
       // Handle different response structures
       let attendanceData = null;
-      
+
       // Check if response.data is an array
       if (response.data && Array.isArray(response.data)) {
         if (response.data.length > 0) {
@@ -1262,7 +1441,7 @@ export const useHRMSStore = create<HRMSState>((set, get) => ({
       } else {
         console.log('⚠️ Response.data is not in expected format:', typeof response.data);
       }
-      
+
       if (attendanceData) {
         console.log('✅ Found attendance record:', {
           id: attendanceData.id,
@@ -1272,10 +1451,10 @@ export const useHRMSStore = create<HRMSState>((set, get) => ({
           status: attendanceData.attendance_status,
           hasMultipleEntries: !!attendanceData.multiple_entries
         });
-        
+
         const attendance = attendanceData;
         const dateStr = attendance.attendance_date || date;
-        
+
         // Convert backend format to app format (hours and minutes only)
         const formatTime = (timeStr: string | null): string | null => {
           if (!timeStr) return null;
@@ -1332,10 +1511,22 @@ export const useHRMSStore = create<HRMSState>((set, get) => ({
           checkOut: formatTime(attendance.check_out),
           status: status,
           totalHours: totalHours,
-          location: "Office",
+          location: attendance.check_in_location || attendance.check_out_location || "Office",
           lastLoginStatus: attendance.last_login_status || null,
           shiftName: attendance.shift_name || null,
           multipleEntries: multipleEntries.length > 0 ? multipleEntries : undefined,
+          checkInRaw: attendance.check_in ?? null,
+          checkOutRaw: attendance.check_out ?? null,
+          checkInLatitude: attendance.check_in_latitude ?? null,
+          checkInLongitude: attendance.check_in_longitude ?? null,
+          checkOutLatitude: attendance.check_out_latitude ?? null,
+          checkOutLongitude: attendance.check_out_longitude ?? null,
+          checkInLocation: attendance.check_in_location ?? null,
+          checkOutLocation: attendance.check_out_location ?? null,
+          checkInCountry: attendance.check_in_country ?? null,
+          checkInCountryCode: attendance.check_in_country_code ?? null,
+          checkOutCountry: attendance.check_out_country ?? null,
+          checkOutCountryCode: attendance.check_out_country_code ?? null,
         };
 
         console.log('✅ Parsed attendance record:', attendanceRecord);
@@ -1347,7 +1538,7 @@ export const useHRMSStore = create<HRMSState>((set, get) => ({
           responseMessage: response.message
         });
       }
-      
+
       return null;
     } catch (error) {
       console.error('❌ Error fetching attendance by date:', error);
@@ -1362,7 +1553,7 @@ export const useHRMSStore = create<HRMSState>((set, get) => ({
   fetchLeaveTypes: async () => {
     const state = get();
     const siteId = state.employee.siteId;
-    
+
     if (!siteId) {
       return { success: false, error: "Site ID not found. Please login again." };
     }
@@ -1383,7 +1574,7 @@ export const useHRMSStore = create<HRMSState>((set, get) => ({
     const state = get();
     const siteId = state.employee.siteId;
     const userId = state.employee.id;
-    
+
     if (!siteId || !userId) {
       return { success: false, error: "User ID or Site ID not found. Please login again." };
     }
@@ -1393,7 +1584,7 @@ export const useHRMSStore = create<HRMSState>((set, get) => ({
     try {
       const leaveTypesResponse = await apiService.getLeaveTypes(siteId);
       const leaveTypes = leaveTypesResponse.data || [];
-      
+
       // Map leave type string (casual, sick, etc.) to code (CL, SL, etc.)
       const leaveTypeCodeMap: Record<string, string> = {
         casual: "CL",
@@ -1401,10 +1592,10 @@ export const useHRMSStore = create<HRMSState>((set, get) => ({
         privilege: "PL",
         wfh: "WFH",
       };
-      
+
       const expectedCode = leaveTypeCodeMap[leave.type];
       const matchedType = leaveTypes.find((lt) => lt.code === expectedCode);
-      
+
       if (!matchedType) {
         // Fallback: try to find by name (case-insensitive)
         const matchedByName = leaveTypes.find(
@@ -1442,7 +1633,7 @@ export const useHRMSStore = create<HRMSState>((set, get) => ({
 
       if (response.status === 201 && response.data) {
         // Convert API response to LeaveRequest format
-    const newLeave: LeaveRequest = {
+        const newLeave: LeaveRequest = {
           id: response.data.id.toString(),
           type: leave.type,
           startDate: response.data.from_date,
@@ -1450,11 +1641,11 @@ export const useHRMSStore = create<HRMSState>((set, get) => ({
           reason: response.data.reason,
           status: response.data.status as "pending" | "approved" | "rejected",
           appliedDate: response.data.applied_at.split("T")[0],
-    };
-    
-    set((state) => ({
-      leaveRequests: [newLeave, ...state.leaveRequests],
-    }));
+        };
+
+        set((state) => ({
+          leaveRequests: [newLeave, ...state.leaveRequests],
+        }));
 
         return { success: true };
       } else {
@@ -1463,12 +1654,12 @@ export const useHRMSStore = create<HRMSState>((set, get) => ({
     } catch (error: any) {
       // Handle API error response
       let errorMessage = 'Failed to apply leave. Please try again.';
-      
+
       if (error?.responseData) {
         // Error data from API service
         const errorData = error.responseData;
         errorMessage = errorData.message || errorMessage;
-        
+
         // Handle validation errors
         if (errorData.data) {
           const validationErrors = Object.values(errorData.data).flat();
@@ -1479,13 +1670,13 @@ export const useHRMSStore = create<HRMSState>((set, get) => ({
       } else if (error?.message) {
         errorMessage = error.message;
       }
-      
+
       console.error('Error applying leave:', error);
       return { success: false, error: errorMessage };
     }
   },
 
-  fetchTasks: async () => {
+  fetchTasks: async (fromDate?: string, toDate?: string) => {
     const state = get();
     const siteId = state.employee.siteId;
     const userId = state.employee.id;
@@ -1495,8 +1686,8 @@ export const useHRMSStore = create<HRMSState>((set, get) => ({
     }
 
     try {
-      // Fetch all tasks (no status filter to get all)
-      const response = await apiService.getMyTasks(siteId, userId);
+      // Fetch tasks with date filters if provided
+      const response = await apiService.getMyTasks(siteId, userId, fromDate, toDate);
 
       if (response.data) {
         // Convert API response to Task format
@@ -1598,21 +1789,21 @@ export const useHRMSStore = create<HRMSState>((set, get) => ({
             tasks: state.tasks.map((task) =>
               task.id === taskId
                 ? {
-                    ...task,
-                    status: taskStatus,
-                    priority: priority,
-                    taskTypeName: updatedTaskAPI.task_type_name || task.taskTypeName || "",
-                  }
+                  ...task,
+                  status: taskStatus,
+                  priority: priority,
+                  taskTypeName: updatedTaskAPI.task_type_name || task.taskTypeName || "",
+                }
                 : task
             ),
           }));
         } else {
           // Fallback: just update status locally
-    set((state) => ({
-      tasks: state.tasks.map((task) =>
-        task.id === taskId ? { ...task, status } : task
-      ),
-    }));
+          set((state) => ({
+            tasks: state.tasks.map((task) =>
+              task.id === taskId ? { ...task, status } : task
+            ),
+          }));
         }
 
         return { success: true };
@@ -1633,7 +1824,7 @@ export const useHRMSStore = create<HRMSState>((set, get) => ({
       text,
       timestamp: new Date().toLocaleString(),
     };
-    
+
     set((state) => ({
       tasks: state.tasks.map((task) =>
         task.id === taskId
@@ -1646,14 +1837,14 @@ export const useHRMSStore = create<HRMSState>((set, get) => ({
   fetchHolidays: async () => {
     const state = get();
     const siteId = state.employee.siteId;
-    
+
     if (!siteId) {
       return { success: false, error: "Site ID not found. Please login again." };
     }
 
     try {
       const response = await apiService.getHolidays(siteId);
-      
+
       // Convert API response to Holiday format
       const holidays: Holiday[] = (response.data || []).map((holiday) => ({
         id: holiday.id.toString(),
@@ -1703,7 +1894,7 @@ export const useHRMSStore = create<HRMSState>((set, get) => ({
   fetchOrganizationSettings: async () => {
     const state = get();
     const organizationId = state.employee.organizationId;
-    
+
     if (!organizationId) {
       console.warn('⚠️ Cannot fetch organization settings: missing organizationId');
       return;
@@ -1712,14 +1903,14 @@ export const useHRMSStore = create<HRMSState>((set, get) => ({
     try {
       console.log('🔍 Fetching organization settings for organizationId:', organizationId);
       const response = await apiService.getOrganizationSettings(organizationId);
-      
+
       if (response.data) {
         console.log('✅ Organization settings fetched:', response.data);
         set({ organizationSettings: response.data });
       } else {
         console.warn('⚠️ Organization settings response missing data');
         // Set default settings (all enabled) if API doesn't return data
-        set({ 
+        set({
           organizationSettings: {
             id: 0,
             organization: '',
@@ -1778,7 +1969,7 @@ export const useHRMSStore = create<HRMSState>((set, get) => ({
     } catch (error) {
       console.error('❌ Error fetching organization settings:', error);
       // Set default settings (all enabled) on error
-      set({ 
+      set({
         organizationSettings: {
           id: 0,
           organization: '',
@@ -1839,7 +2030,7 @@ export const useHRMSStore = create<HRMSState>((set, get) => ({
   captureAndUploadProfilePhoto: async () => {
     const state = get();
     const userId = state.employee.id;
-    
+
     if (!userId) {
       console.warn('⚠️ Cannot capture profile photo: missing userId');
       return { success: false, error: "User ID not found" };
@@ -1847,7 +2038,7 @@ export const useHRMSStore = create<HRMSState>((set, get) => ({
 
     try {
       console.log('📸 Opening camera directly for selfie...');
-      
+
       let base64Image: string | null = null;
 
       // For web platform, use HTML5 getUserMedia API (same as check-in)
@@ -2028,7 +2219,7 @@ export const useHRMSStore = create<HRMSState>((set, get) => ({
       if (!base64Image) {
         return { success: false, error: "Failed to capture photo" };
       }
-      
+
       // Comprehensive face detection validation
       console.log('🔍 Validating face in captured image...');
       const faceValidation = await validateFaceImage(base64Image);
@@ -2041,7 +2232,7 @@ export const useHRMSStore = create<HRMSState>((set, get) => ({
         return { success: false, error: faceValidation.error || "Face detection failed" };
       }
       console.log('✅ Face detected successfully');
-      
+
       // Strip data URI prefix if present (backend expects just base64 string)
       let base64String = base64Image;
       if (base64Image.startsWith('data:image')) {
@@ -2051,11 +2242,11 @@ export const useHRMSStore = create<HRMSState>((set, get) => ({
           base64String = base64Match[1];
         }
       }
-      
+
       // Upload to backend silently (like check-in)
       console.log('📤 Uploading profile photo...');
       const uploadResult = await get().uploadProfilePhoto(base64String);
-      
+
       if (uploadResult.success) {
         console.log('✅ Profile photo uploaded successfully');
         // Is photo updated will be toggled to true in uploadProfilePhoto function
@@ -2068,7 +2259,7 @@ export const useHRMSStore = create<HRMSState>((set, get) => ({
           [{ text: 'OK' }]
         );
       }
-      
+
       return uploadResult;
     } catch (error) {
       console.error('❌ Error in captureAndUploadProfilePhoto:', error);
@@ -2085,7 +2276,7 @@ export const useHRMSStore = create<HRMSState>((set, get) => ({
   uploadProfilePhoto: async (base64Image: string) => {
     const state = get();
     const userId = state.employee.id;
-    
+
     if (!userId) {
       return { success: false, error: "User ID not found" };
     }
@@ -2093,7 +2284,7 @@ export const useHRMSStore = create<HRMSState>((set, get) => ({
     try {
       // Step 1: Upload profile photo using base64_image
       const response = await apiService.uploadProfilePhoto(userId, base64Image);
-      
+
       if (response.status === 200 || response.status === 201) {
         // Update employee avatar if URL is returned (backend returns profile_photo)
         if (response.data?.profile_photo) {
@@ -2106,23 +2297,23 @@ export const useHRMSStore = create<HRMSState>((set, get) => ({
           }));
           console.log('✅ Profile photo stored in state');
         }
-        
+
         // Step 2: Toggle is_photo_updated to ON (true) after successful upload
         // This ensures user won't be asked for selfie again on next login
         // IMPORTANT: Always call this API after successful photo upload
         try {
           console.log('🔄 Calling toggleIsPhotoUpdated API to set is_photo_updated = true...');
           console.log('📋 UserId for toggle API:', userId);
-          
+
           const toggleResponse = await apiService.toggleIsPhotoUpdated(userId);
-          
+
           console.log('📋 Toggle API Response:', {
             status: toggleResponse.status,
             message: toggleResponse.message,
             data: toggleResponse.data,
             fullResponse: toggleResponse
           });
-          
+
           // Update employee state flag to true regardless of response format
           // This prevents camera from opening again
           set((state) => ({
@@ -2131,7 +2322,7 @@ export const useHRMSStore = create<HRMSState>((set, get) => ({
               isPhotoUpdated: true,
             }
           }));
-          
+
           if (toggleResponse.status === 200) {
             console.log('✅ Is photo updated API call successful - flag set to true');
             if (toggleResponse.data?.is_photo_updated === true) {
@@ -2150,7 +2341,7 @@ export const useHRMSStore = create<HRMSState>((set, get) => ({
             responseData: toggleError?.responseData,
             status: toggleError?.responseData?.status
           });
-          
+
           // CRITICAL: Still update state to prevent repeated camera prompts
           // Even if API fails, we don't want to ask for photo again
           set((state) => ({
@@ -2161,7 +2352,7 @@ export const useHRMSStore = create<HRMSState>((set, get) => ({
           }));
           console.log('✅ State updated to true despite API error - camera will not open again');
         }
-        
+
         return { success: true };
       } else {
         return { success: false, error: response.message || "Upload failed" };
@@ -2170,6 +2361,55 @@ export const useHRMSStore = create<HRMSState>((set, get) => ({
       console.error('❌ Error uploading profile photo:', error);
       const errorMessage = error instanceof Error ? error.message : 'Failed to upload profile photo';
       return { success: false, error: errorMessage };
+    }
+  },
+
+  fetchNotificationHistory: async () => {
+    try {
+      const response = await apiService.getNotificationHistory();
+      if (response && response.results) {
+        const unreadCount = response.results.filter(n => !n.is_read).length;
+        set({
+          notificationHistory: response.results,
+          unreadNotificationsCount: unreadCount
+        });
+        console.log(`🔔 Fetched ${response.results.length} notifications (${unreadCount} unread)`);
+      }
+    } catch (error) {
+      console.error('❌ Error fetching notification history:', error);
+    }
+  },
+
+  markNotificationAsRead: async (id: string) => {
+    try {
+      await apiService.markNotificationAsRead(id);
+      // Update local state
+      const history = get().notificationHistory.map(n =>
+        n.id === id ? { ...n, is_read: true } : n
+      );
+      const unreadCount = history.filter(n => !n.is_read).length;
+      set({
+        notificationHistory: history,
+        unreadNotificationsCount: unreadCount
+      });
+      console.log(`🔔 Marked notification ${id} as read`);
+    } catch (error) {
+      console.error('❌ Error marking notification as read:', error);
+    }
+  },
+
+  markAllNotificationsAsRead: async () => {
+    try {
+      await apiService.markNotificationAsRead();
+      // Update local state
+      const history = get().notificationHistory.map(n => ({ ...n, is_read: true }));
+      set({
+        notificationHistory: history,
+        unreadNotificationsCount: 0
+      });
+      console.log('🔔 Marked all notifications as read');
+    } catch (error) {
+      console.error('❌ Error marking all notifications as read:', error);
     }
   },
 }));

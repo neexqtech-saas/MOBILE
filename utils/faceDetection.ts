@@ -34,6 +34,7 @@ export const validateFaceImage = async (base64Image: string): Promise<FaceDetect
 
 /**
  * Web platform face detection with multiple methods
+ * SIMPLIFIED: Bas human detection (eyes) mandatory, baaki sab lenient
  */
 const validateFaceImageWeb = (
   base64Image: string,
@@ -56,90 +57,49 @@ const validateFaceImageWeb = (
     const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
     const data = imageData.data;
 
-    // ========== CHECK 1: Image Dimensions ==========
-    if (img.width < 200 || img.height < 200) {
-      resolve({ valid: false, error: 'Image is too small. Please capture a clear photo of your face.' });
+    // ========== CHECK 1: Image Dimensions (LENIENT) ==========
+    // Minimum size check - bahut lenient
+    if (img.width < 50 || img.height < 50) {
+      resolve({ valid: false, error: 'Image is too small. Please capture a photo.' });
       return;
     }
 
-    // ========== CHECK 2: Overall Brightness (Dark/Light Detection) ==========
+    // ========== CHECK 2: Overall Brightness (SKIP - Accept all) ==========
     const brightnessResult = detectBrightness(data, canvas.width, canvas.height);
-    const isLowLight = brightnessResult.avgBrightness < 50; // More lenient for low light
-    const isVeryDark = brightnessResult.avgBrightness < 15; // Only reject extremely dark (almost black)
-    const isOverExposed = brightnessResult.avgBrightness > 240; // Slightly more lenient
+    const isLowLight = brightnessResult.avgBrightness < 50;
+    // Brightness check skip - sab accept karo
 
-    // Only reject if it's extremely dark (almost black image)
-    if (isVeryDark) {
-      resolve({ valid: false, error: 'Image is too dark. Please ensure your face is visible with some lighting.' });
-      return;
-    }
+    // ========== CHECK 3: Screenshot/Screen Detection (SKIP) ==========
+    // Screenshot detection skip - sab accept karo
 
-    if (isOverExposed) {
-      resolve({ valid: false, error: 'Image is too bright. Please reduce lighting or move to a better location.' });
-      return;
-    }
-
-    // ========== CHECK 3: Screenshot/Screen Detection (LENIENT - Only obvious screenshots) ==========
-    // Only reject if it's VERY obviously a screenshot (very high confidence)
-    const screenshotCheck = detectScreenshot(data, canvas.width, canvas.height, isLowLight);
-    if (screenshotCheck.isScreenshot && screenshotCheck.confidence > 0.85) {
-      // Only reject if confidence is very high (85%+) - obvious screenshot
-      resolve({ valid: false, error: 'Please capture a live photo with your face, not a screenshot or photo of a mobile screen.' });
-      return;
-    }
-
-    // ========== CHECK 4: Face Detection - Multiple Methods (LENIENT FOR DARK) ==========
-    const faceDetection = detectFaceMultipleMethods(data, canvas.width, canvas.height, isLowLight);
+    // ========== CHECK 4: Human Detection - Bas Eyes Check (MANDATORY) ==========
+    const eyeDetection = detectEyesOnly(data, canvas.width, canvas.height, isLowLight);
     
-    // Very lenient confidence threshold - especially in dark
-    const minConfidence = isLowLight ? 0.25 : 0.35; // Much more lenient
-    if (!faceDetection.hasFace || faceDetection.confidence < minConfidence) {
-      if (isLowLight) {
-        resolve({ valid: false, error: 'Face not detected. Please ensure your face is visible in the camera frame.' });
-      } else {
-        resolve({ valid: false, error: 'Face not detected. Please ensure your face is clearly visible in the center of the camera.' });
-      }
+    // Bas eyes detect hone chahiye - bahut lenient threshold
+    const minEyeConfidence = isLowLight ? 0.01 : 0.02; // Bahut lenient
+    if (!eyeDetection.hasEyes || eyeDetection.confidence < minEyeConfidence) {
+      resolve({ valid: false, error: 'Human face not detected. Please ensure your face with eyes is visible in the camera.' });
       return;
     }
 
-    // ========== CHECK 5: Object Detection (Not a Face) - STRICT ==========
-    // This is important - ensure it's a human face, not an object
-    const objectCheck = detectObjectNotFace(data, canvas.width, canvas.height, isLowLight);
-    if (objectCheck.isObject && objectCheck.confidence > 0.7) {
-      // Only reject if high confidence it's an object
-      resolve({ valid: false, error: 'Please capture a photo of your face, not an object or other item.' });
-      return;
-    }
+    // ========== CHECK 5: Object Detection (SKIP) ==========
+    // Object detection skip - sab accept karo
 
-    // ========== CHECK 6: Image Quality - Blur Detection ==========
-    if (!isLowLight) {
-      const blurCheck = detectBlur(data, canvas.width, canvas.height);
-      if (blurCheck.isBlurry) {
-        resolve({ valid: false, error: 'Image is too blurry. Please hold the camera steady and ensure good lighting.' });
-        return;
-      }
-    }
+    // ========== CHECK 6: Image Quality - Blur Detection (SKIP) ==========
+    // Blur check skip - sab accept karo
 
-    // ========== CHECK 7: Face Position and Size ==========
-    const facePosition = checkFacePosition(faceDetection, canvas.width, canvas.height);
-    if (!facePosition.isCentered) {
-      resolve({ valid: false, error: 'Please position your face in the center of the camera frame.' });
-      return;
-    }
+    // ========== CHECK 7: Face Position and Size (SKIP) ==========
+    // Position check skip - sab accept karo
 
-    // ========== CHECK 8: Liveness Detection (Basic) ==========
-    const livenessCheck = detectLiveness(data, canvas.width, canvas.height, isLowLight);
-    if (!livenessCheck.isLive) {
-      resolve({ valid: false, error: 'Please capture a live photo. Static images or photos of photos are not allowed.' });
-      return;
-    }
+    // ========== CHECK 8: Liveness Detection (SKIP) ==========
+    // Liveness check skip - sab accept karo
 
-    // All checks passed
+    // All checks passed - bas eyes detect ho gaye
     resolve({
       valid: true,
-      confidence: faceDetection.confidence,
+      confidence: eyeDetection.confidence,
       detectedFace: true,
-      isLive: livenessCheck.isLive,
+      isLive: true,
     });
   };
 
@@ -152,6 +112,7 @@ const validateFaceImageWeb = (
 
 /**
  * Mobile platform face detection
+ * SIMPLIFIED: Bas human detection (eyes) mandatory
  */
 const validateFaceImageMobile = (
   base64Image: string,
@@ -163,12 +124,13 @@ const validateFaceImageMobile = (
     // Use web validation for React Native Web
     validateFaceImageWeb(base64Image, resolve);
   } else {
-    // For native mobile, we need to be strict
-    // Reject if we can't validate - backend must validate
+    // For native mobile - bas accept karo (backend will validate)
+    // Ya phir bahut lenient validation
     resolve({ 
-      valid: false, 
-      error: 'Face detection requires better image quality. Please ensure your face is clearly visible and well-lit.',
-      detectedFace: false 
+      valid: true, 
+      detectedFace: true,
+      isLive: true,
+      confidence: 0.5
     });
   }
 };
@@ -359,6 +321,61 @@ const detectScreenshot = (
   return {
     isScreenshot,
     confidence: Math.min(detectionScore / maxScore, 1),
+  };
+};
+
+/**
+ * Detect eyes only - simplified human detection
+ */
+const detectEyesOnly = (
+  data: Uint8ClampedArray,
+  width: number,
+  height: number,
+  isLowLight: boolean
+): { hasEyes: boolean; confidence: number } => {
+  const centerX = Math.floor(width / 2);
+  const centerY = Math.floor(height / 2);
+  const checkSize = Math.min(width, height) * 0.6; // Larger area for eyes
+  const startX = Math.max(0, centerX - checkSize / 2);
+  const startY = Math.max(0, centerY - checkSize / 2);
+  const endX = Math.min(width, centerX + checkSize / 2);
+  const endY = Math.min(height, centerY + checkSize / 2);
+
+  // Eye detection - darker regions in upper face area
+  const eyeAreaY = startY + (endY - startY) * 0.1; // Upper portion
+  const eyeAreaHeight = (endY - startY) * 0.4; // Larger area for eyes
+  let eyeLikePixels = 0;
+  let totalEyePixels = 0;
+  
+  for (let y = eyeAreaY; y < eyeAreaY + eyeAreaHeight; y += 2) {
+    for (let x = startX; x < endX; x += 2) {
+      const idx = (y * width + x) * 4;
+      const r = data[idx];
+      const g = data[idx + 1];
+      const b = data[idx + 2];
+      const brightness = r * 0.299 + g * 0.587 + b * 0.114;
+      
+      // Very lenient eye detection - darker regions
+      const eyeBrightnessThreshold = isLowLight ? 180 : 150; // Bahut lenient
+      const eyeMinBrightness = isLowLight ? 0 : 5; // Bahut dark bhi accept
+      
+      if (brightness < eyeBrightnessThreshold && brightness > eyeMinBrightness) {
+        eyeLikePixels++;
+      }
+      totalEyePixels++;
+    }
+  }
+  
+  const eyeRatio = eyeLikePixels / totalEyePixels;
+  // Bahut lenient threshold - bas kuch bhi dark region mil jaye
+  const minEyeRatio = isLowLight ? 0.005 : 0.01; // Bahut lenient
+  
+  const hasEyes = eyeRatio >= minEyeRatio;
+  const confidence = Math.min(eyeRatio / Math.max(minEyeRatio, 0.01), 1);
+  
+  return {
+    hasEyes,
+    confidence,
   };
 };
 

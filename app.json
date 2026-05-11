@@ -21,8 +21,13 @@
       },
       "edgeToEdgeEnabled": true,
       "predictiveBackGestureEnabled": false,
-      "package": "com.hrmspro.app",
+      "package": "com.neexq.app",
+      "googleServicesFile": "./google-services.json",
       "versionCode": 1,
+      "notification": {
+        "icon": "./assets/images/icon.png",
+        "color": "#3b82f6"
+      },
       "permissions": [
         "CAMERA",
         "READ_EXTERNAL_STORAGE",
@@ -50,10 +55,26 @@
           }
         }
       ],
-      "expo-web-browser"
+      "expo-web-browser",
+      [
+        "@react-native-firebase/app",
+        {
+          "android": {
+            "googleServicesFile": "./google-services.json"
+          },
+          "ios": {
+            "googleServicesFile": "./GoogleService-Info.plist"
+          }
+        }
+      ]
     ],
     "experiments": {
       "reactCompiler": true
+    },
+    "extra": {
+      "eas": {
+        "projectId": "87b68cf7-055d-458c-a76d-25703332250d"
+      }
     }
   }
 }

@@ -1,10 +1,13 @@
 import React from "react";
 import { createNativeStackNavigator } from "@react-navigation/native-stack";
+import { useNavigation } from "@react-navigation/native";
+import type { BottomTabNavigationProp } from "@react-navigation/bottom-tabs";
 import LeaveScreen from "@/screens/LeaveScreen";
 import ApplyLeaveScreen from "@/screens/ApplyLeaveScreen";
 import { ProfessionalHeader } from "@/components/ProfessionalHeader";
 import { useTheme } from "@/hooks/useTheme";
 import { getCommonScreenOptions } from "@/navigation/screenOptions";
+import type { MainTabParamList } from "@/navigation/MainTabNavigator";
 
 export type LeaveStackParamList = {
   Leave: undefined;
@@ -12,6 +15,20 @@ export type LeaveStackParamList = {
 };
 
 const Stack = createNativeStackNavigator<LeaveStackParamList>();
+
+function LeaveManagementHeader() {
+  const navigation = useNavigation();
+  return (
+    <ProfessionalHeader
+      title="Leave Management"
+      showBackButton
+      onBackPress={() => {
+        const tab = navigation.getParent() as BottomTabNavigationProp<MainTabParamList> | undefined;
+        tab?.navigate("HomeTab");
+      }}
+    />
+  );
+}
 
 export default function LeaveStackNavigator() {
   const { theme, isDark } = useTheme();
@@ -22,7 +39,7 @@ export default function LeaveStackNavigator() {
         name="Leave"
         component={LeaveScreen}
         options={{
-          header: () => <ProfessionalHeader title="Leave Management" showBackButton={true} />,
+          header: () => <LeaveManagementHeader />,
         }}
       />
       <Stack.Screen

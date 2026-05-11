@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { View, StyleSheet, Pressable, ActivityIndicator, ScrollView, Platform, Dimensions } from "react-native";
+import { View, StyleSheet, Pressable, ActivityIndicator, Platform, Dimensions, useWindowDimensions } from "react-native";
 import { Feather } from "@expo/vector-icons";
 import { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { useNavigation } from "@react-navigation/native";
@@ -14,6 +14,7 @@ import { AttendanceStackParamList } from "@/navigation/AttendanceStackNavigator"
 import { apiService } from "@/services/api";
 import Spacer from "@/components/Spacer";
 import { RefreshButton } from "@/components/RefreshButton";
+import { getCurrentMonthDates } from "@/utils/dateHelpers";
 
 type AttendanceScreenNavigationProp = NativeStackNavigationProp<
   AttendanceStackParamList,
@@ -90,6 +91,31 @@ export default function AttendanceScreen() {
     fetchAttendanceHistory,
     fetchTodayAttendance
   } = useHRMSStore();
+
+  const { width: screenWidth } = useWindowDimensions();
+
+  // Responsive tweaks for small phones / narrow widths
+  const isTinyPhone = screenWidth < 360;
+  const isNarrowLayout = screenWidth < 400;
+
+  const sidePadding = isTinyPhone ? Spacing.lg : isNarrowLayout ? Spacing["2xl"] : Spacing["3xl"];
+  const calendarPadding = isTinyPhone ? Spacing.lg : Spacing["2xl"];
+
+  const titleFontSize = isTinyPhone ? 18 : isNarrowLayout ? 19 : 20;
+  const dayFontSize = isTinyPhone ? 12 : isNarrowLayout ? 13 : 14;
+  const weekdayFontSize = isTinyPhone ? 10 : 11;
+
+  // Compact selected-date / check-in-out details (separate from calendar title scale)
+  const detailCardPadding = isTinyPhone ? 10 : isNarrowLayout ? Spacing.md : Spacing.lg;
+  const detailValueFontSize = isTinyPhone ? 13 : isNarrowLayout ? 14 : 15;
+  const detailLabelFontSize = isTinyPhone ? 9 : 10;
+  const recordDateFontSize = isTinyPhone ? 14 : isNarrowLayout ? 15 : 16;
+  const detailsSectionTitleSize = isTinyPhone ? 16 : isNarrowLayout ? 17 : 18;
+  const detailHeaderIconSize = isTinyPhone ? 18 : 20;
+  const detailAvatarBox = isTinyPhone ? 36 : 40;
+  const useColumnForCheckInOut = isTinyPhone;
+  const detailRowGap = isTinyPhone ? Spacing.sm : Spacing.md;
+  const detailDividerHeight = isTinyPhone ? 1 : 30;
 
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -171,7 +197,8 @@ export default function AttendanceScreen() {
     // setSelectedDate(""); // Start with no date selected
     
     if (employee?.organizationId && employee?.id) {
-      fetchAttendanceHistory(employee.organizationId);
+      const { from, to } = getCurrentMonthDates();
+      fetchAttendanceHistory(employee.organizationId, from, to);
       fetchTodayAttendance();
     }
   }, [employee?.organizationId, employee?.id, fetchAttendanceHistory, fetchTodayAttendance]);
@@ -198,8 +225,9 @@ export default function AttendanceScreen() {
     setError(null);
 
     try {
+      const { from, to } = getCurrentMonthDates();
       await Promise.all([
-        fetchAttendanceHistory(employee.organizationId),
+        fetchAttendanceHistory(employee.organizationId, from, to),
         fetchTodayAttendance(),
         fetchMonthlyAttendance()
       ]);
@@ -346,6 +374,7 @@ export default function AttendanceScreen() {
             {
               color: textColor,
               fontWeight: isSelected ? "600" : isToday || dateStatus !== 'none' ? "500" : "400",
+              fontSize: dayFontSize,
             }
           ]}
         >
@@ -376,7 +405,16 @@ export default function AttendanceScreen() {
     }
 
     return (
-      <View style={styles.mainCalendarContainer}>
+      <View
+        style={[
+          styles.mainCalendarContainer,
+          {
+            padding: calendarPadding,
+            paddingBottom: calendarPadding,
+            marginHorizontal: sidePadding,
+          },
+        ]}
+      >
         {/* Month Navigation */}
         <View style={styles.calendarHeader}>
           <Pressable
@@ -389,10 +427,10 @@ export default function AttendanceScreen() {
             <Feather name="chevron-left" size={24} color={Colors.dark.primary} />
           </Pressable>
           <View style={styles.monthTitleContainer}>
-            <ThemedText style={styles.monthTitleText}>
+            <ThemedText style={[styles.monthTitleText, { fontSize: isTinyPhone ? 17 : isNarrowLayout ? 18 : 19 }]}>
               {MONTHS[calendarMonth.getMonth()]}
             </ThemedText>
-            <ThemedText style={styles.monthYearText}>
+            <ThemedText style={[styles.monthYearText, { fontSize: isTinyPhone ? 12 : isNarrowLayout ? 13 : 14 }]}>
               {calendarMonth.getFullYear()}
             </ThemedText>
           </View>
@@ -414,10 +452,13 @@ export default function AttendanceScreen() {
               styles.weekdayHeader,
               (index === 0 || index === 6) && styles.weekendHeader
             ]}>
-              <ThemedText style={[
-                styles.weekdayText,
-                (index === 0 || index === 6) && styles.weekendText
-              ]}>
+              <ThemedText
+                style={[
+                  styles.weekdayText,
+                  (index === 0 || index === 6) && styles.weekendText,
+                  { fontSize: weekdayFontSize },
+                ]}
+              >
                 {day}
               </ThemedText>
             </View>
@@ -484,7 +525,7 @@ export default function AttendanceScreen() {
 
   return (
     <ScreenScrollView>
-      <View style={styles.refreshHeader}>
+      <View style={[styles.refreshHeader, { paddingHorizontal: sidePadding }]}>
         <View style={{ flex: 1 }} />
         <RefreshButton
           onPress={handleRefresh}
@@ -493,12 +534,21 @@ export default function AttendanceScreen() {
         />
       </View>
       <Spacer height={Spacing.md} />
-      <View style={styles.header}>
+      <View style={[styles.header, { paddingHorizontal: sidePadding }]}>
         <View style={styles.titleContainer}>
           <View style={styles.titleIconContainer}>
             <Feather name="calendar" size={22} color={Colors.dark.primary} />
           </View>
-          <ThemedText type="h4" style={styles.title}>Attendance Calendar</ThemedText>
+          <ThemedText type="h4" style={[styles.title, { fontSize: titleFontSize }]}>
+            Attendance Calendar
+          </ThemedText>
+        </View>
+        
+        {/* Date Range Label */}
+        <View style={{ marginTop: Spacing.sm }}>
+          <ThemedText type="small" style={{ color: theme.textMuted, fontSize: 12, fontWeight: '500' }}>
+            Showing attendance history for this month
+          </ThemedText>
         </View>
       </View>
 
@@ -513,19 +563,24 @@ export default function AttendanceScreen() {
 
       {/* Selected Date Details */}
       {selectedDate && (
-        <View style={styles.selectedDateSection}>
+        <View style={[styles.selectedDateSection, { paddingHorizontal: sidePadding }]}>
           <View style={styles.header}>
             <View style={styles.titleContainer}>
-              <View style={styles.titleIconContainer}>
-                <Feather name="clock" size={22} color={Colors.dark.primary} />
+              <View
+                style={[
+                  styles.titleIconContainer,
+                  { width: isTinyPhone ? 32 : 34, height: isTinyPhone ? 32 : 34 },
+                ]}
+              >
+                <Feather name="clock" size={detailHeaderIconSize} color={Colors.dark.primary} />
               </View>
-              <ThemedText type="h4" style={styles.title}>
+              <ThemedText type="h4" style={[styles.title, { fontSize: detailsSectionTitleSize }]}>
                 {formatDate(selectedDate)} Details
               </ThemedText>
             </View>
           </View>
 
-          <Spacer height={Spacing.xl} />
+          <Spacer height={Spacing.md} />
 
           {error ? (
             <View style={styles.errorContainer}>
@@ -552,20 +607,37 @@ export default function AttendanceScreen() {
           ) : (
             <>
               {/* Main Attendance Record */}
-              <View style={styles.recordCard}>
-                <View style={styles.recordHeader}>
+              <View style={[styles.recordCard, { marginHorizontal: 0, padding: detailCardPadding }]}>
+                <View
+                  style={[
+                    styles.recordHeader,
+                    {
+                      flexDirection: isNarrowLayout ? "column" : "row",
+                      alignItems: isNarrowLayout ? "flex-start" : "center",
+                    },
+                  ]}
+                >
                   <View style={styles.iconContainer}>
-                    <View style={styles.iconBackground}>
-                      <Feather name="calendar" size={20} color={Colors.dark.primary} />
+                    <View
+                      style={[
+                        styles.iconBackground,
+                        {
+                          width: detailAvatarBox,
+                          height: detailAvatarBox,
+                          borderRadius: BorderRadius.md,
+                        },
+                      ]}
+                    >
+                      <Feather name="calendar" size={detailHeaderIconSize} color={Colors.dark.primary} />
                     </View>
                   </View>
                   <View style={styles.recordInfo}>
-                    <ThemedText style={styles.recordDate}>
+                    <ThemedText style={[styles.recordDate, { fontSize: recordDateFontSize }]}>
                       {formatDate(selectedDate)}
                     </ThemedText>
                     <View style={styles.shiftBadge}>
-                      <Feather name="clock" size={12} color={theme.textMuted} />
-                      <ThemedText type="small" style={styles.shiftText}>
+                      <Feather name="clock" size={isTinyPhone ? 10 : 11} color={theme.textMuted} />
+                      <ThemedText type="small" style={[styles.shiftText, { fontSize: isTinyPhone ? 10 : 11 }]}>
                         {selectedDateDetails.shift_name || 'No shift'}
                       </ThemedText>
                     </View>
@@ -573,7 +645,11 @@ export default function AttendanceScreen() {
                   <View
                     style={[
                       styles.statusBadge,
-                      { backgroundColor: getStatusColor(selectedDateDetails.attendance_status || '') + "15" },
+                      {
+                        backgroundColor: getStatusColor(selectedDateDetails.attendance_status || '') + "15",
+                        paddingHorizontal: isTinyPhone ? Spacing.sm : Spacing.md,
+                        paddingVertical: isTinyPhone ? 4 : Spacing.sm,
+                      },
                     ]}
                   >
                     <View
@@ -586,7 +662,10 @@ export default function AttendanceScreen() {
                       type="small"
                       style={[
                         styles.statusText,
-                        { color: getStatusColor(selectedDateDetails.attendance_status || '') },
+                        {
+                          color: getStatusColor(selectedDateDetails.attendance_status || ''),
+                          fontSize: isTinyPhone ? 10 : 11,
+                        },
                       ]}
                     >
                       {selectedDateDetails.attendance_status?.charAt(0).toUpperCase() + selectedDateDetails.attendance_status?.slice(1) || "Unknown"}
@@ -594,40 +673,63 @@ export default function AttendanceScreen() {
                   </View>
                 </View>
 
-                <View style={styles.recordDetails}>
-                  <View style={styles.detailRow}>
+                <View style={[styles.recordDetails, { paddingTop: Spacing.sm, marginTop: Spacing.xs }]}>
+                  <View
+                    style={[
+                      styles.detailRow,
+                      {
+                        flexDirection: useColumnForCheckInOut ? "column" : "row",
+                        gap: useColumnForCheckInOut ? Spacing.sm : detailRowGap,
+                        alignItems: useColumnForCheckInOut ? "stretch" : "center",
+                      },
+                    ]}
+                  >
                     <View style={styles.detailItem}>
-                      <View style={styles.detailLabelContainer}>
-                        <Feather name="log-in" size={12} color={theme.textMuted} />
-                        <ThemedText type="small" style={styles.detailLabel}>
+                      <View style={[styles.detailLabelContainer, { marginBottom: 2 }]}>
+                        <Feather name="log-in" size={isTinyPhone ? 10 : 11} color={theme.textMuted} />
+                        <ThemedText type="small" style={[styles.detailLabel, { fontSize: detailLabelFontSize }]}>
                           Check In
                         </ThemedText>
                       </View>
-                      <ThemedText style={styles.detailValue}>
+                      <ThemedText style={[styles.detailValue, { fontSize: detailValueFontSize, marginTop: 0 }]}>
                         {formatTimeDisplay(selectedDateDetails.check_in)}
                       </ThemedText>
                     </View>
-                    <View style={styles.detailDivider} />
+                    <View
+                      style={[
+                        styles.detailDivider,
+                        {
+                          width: useColumnForCheckInOut ? "100%" : 1,
+                          height: useColumnForCheckInOut ? 1 : detailDividerHeight,
+                        },
+                      ]}
+                    />
                     <View style={styles.detailItem}>
-                      <View style={styles.detailLabelContainer}>
-                        <Feather name="log-out" size={12} color={theme.textMuted} />
-                        <ThemedText type="small" style={styles.detailLabel}>
+                      <View style={[styles.detailLabelContainer, { marginBottom: 2 }]}>
+                        <Feather name="log-out" size={isTinyPhone ? 10 : 11} color={theme.textMuted} />
+                        <ThemedText type="small" style={[styles.detailLabel, { fontSize: detailLabelFontSize }]}>
                           Check Out
                         </ThemedText>
                       </View>
-                      <ThemedText style={styles.detailValue}>
+                      <ThemedText style={[styles.detailValue, { fontSize: detailValueFontSize, marginTop: 0 }]}>
                         {formatTimeDisplay(selectedDateDetails.check_out)}
                       </ThemedText>
                     </View>
                   </View>
-                  {selectedDateDetails.production_hours && (
+                  {selectedDateDetails.production_hours != null &&
+                    selectedDateDetails.production_hours !== "" && (
                     <>
-                      <Spacer height={Spacing.md} />
-                      <View style={styles.hoursContainer}>
-                        <View style={styles.hoursIconContainer}>
-                          <Feather name="clock" size={16} color={Colors.dark.primary} />
+                      <Spacer height={Spacing.sm} />
+                      <View style={[styles.hoursContainer, { padding: isTinyPhone ? Spacing.sm : Spacing.md }]}>
+                        <View
+                          style={[
+                            styles.hoursIconContainer,
+                            { width: isTinyPhone ? 28 : 30, height: isTinyPhone ? 28 : 30 },
+                          ]}
+                        >
+                          <Feather name="clock" size={isTinyPhone ? 14 : 15} color={Colors.dark.primary} />
                         </View>
-                        <ThemedText style={styles.hoursText}>
+                        <ThemedText style={[styles.hoursText, { fontSize: isTinyPhone ? 12 : 13 }]}>
                           Total: {selectedDateDetails.production_hours}
                         </ThemedText>
                       </View>
@@ -639,16 +741,23 @@ export default function AttendanceScreen() {
               {/* Multiple Entries */}
               {selectedDateDetails.multiple_entries && selectedDateDetails.multiple_entries.length > 0 && (
                 <>
-                  <Spacer height={Spacing.lg} />
+                  <Spacer height={Spacing.md} />
                   <View style={styles.header}>
                     <View style={styles.titleContainer}>
-                      <View style={styles.titleIconContainer}>
-                        <Feather name="list" size={22} color={Colors.dark.primary} />
+                      <View
+                        style={[
+                          styles.titleIconContainer,
+                          { width: isTinyPhone ? 32 : 34, height: isTinyPhone ? 32 : 34 },
+                        ]}
+                      >
+                        <Feather name="list" size={detailHeaderIconSize} color={Colors.dark.primary} />
                       </View>
-                      <ThemedText type="h4" style={styles.title}>Multiple Entries</ThemedText>
+                      <ThemedText type="h4" style={[styles.title, { fontSize: detailsSectionTitleSize }]}>
+                        Multiple Entries
+                      </ThemedText>
                     </View>
                   </View>
-                  <Spacer height={Spacing.md} />
+                  <Spacer height={Spacing.sm} />
                   {[...selectedDateDetails.multiple_entries]
                     .sort((a: any, b: any) => {
                       // Sort by check_in_time (oldest first) for correct chronological order
@@ -661,52 +770,91 @@ export default function AttendanceScreen() {
                     .map((entry: any, index: number) => (
                     <View
                       key={entry.id || index}
-                      style={styles.multipleEntryCard}
+                      style={[styles.multipleEntryCard, { marginHorizontal: 0, padding: detailCardPadding }]}
                     >
-                      <View style={styles.multipleEntryHeader}>
-                        <View style={styles.entryNumberBadge}>
-                          <ThemedText style={styles.entryNumberText}>
+                      <View
+                        style={[
+                          styles.multipleEntryHeader,
+                          {
+                            flexDirection: isNarrowLayout ? "column" : "row",
+                            alignItems: isNarrowLayout ? "flex-start" : "center",
+                            gap: isNarrowLayout ? Spacing.sm : Spacing.md,
+                          },
+                        ]}
+                      >
+                        <View
+                          style={[
+                            styles.entryNumberBadge,
+                            {
+                              width: isTinyPhone ? 28 : 32,
+                              height: isTinyPhone ? 28 : 32,
+                            },
+                          ]}
+                        >
+                          <ThemedText style={[styles.entryNumberText, { fontSize: isTinyPhone ? 12 : 13 }]}>
                             #{index + 1}
                           </ThemedText>
                         </View>
-                        <ThemedText style={styles.multipleEntryTitle}>
+                        <ThemedText style={[styles.multipleEntryTitle, { fontSize: isTinyPhone ? 14 : 15 }]}>
                           Entry {index + 1}
                         </ThemedText>
                       </View>
-                      <View style={styles.recordDetails}>
-                        <View style={styles.detailRow}>
+                      <View style={[styles.recordDetails, { paddingTop: Spacing.sm, marginTop: Spacing.xs }]}>
+                        <View
+                          style={[
+                            styles.detailRow,
+                            {
+                              flexDirection: useColumnForCheckInOut ? "column" : "row",
+                              gap: useColumnForCheckInOut ? Spacing.sm : detailRowGap,
+                              alignItems: useColumnForCheckInOut ? "stretch" : "center",
+                            },
+                          ]}
+                        >
                           <View style={styles.detailItem}>
-                            <View style={styles.detailLabelContainer}>
-                              <Feather name="log-in" size={12} color={theme.textMuted} />
-                              <ThemedText type="small" style={styles.detailLabel}>
+                            <View style={[styles.detailLabelContainer, { marginBottom: 2 }]}>
+                              <Feather name="log-in" size={isTinyPhone ? 10 : 11} color={theme.textMuted} />
+                              <ThemedText type="small" style={[styles.detailLabel, { fontSize: detailLabelFontSize }]}>
                                 Check In
                               </ThemedText>
                             </View>
-                            <ThemedText style={styles.detailValue}>
+                            <ThemedText style={[styles.detailValue, { fontSize: detailValueFontSize, marginTop: 0 }]}>
                               {formatTimeDisplay(entry.check_in_time || entry.check_in)}
                             </ThemedText>
                           </View>
-                          <View style={styles.detailDivider} />
+                          <View
+                            style={[
+                              styles.detailDivider,
+                              {
+                                width: useColumnForCheckInOut ? "100%" : 1,
+                                height: useColumnForCheckInOut ? 1 : detailDividerHeight,
+                              },
+                            ]}
+                          />
                           <View style={styles.detailItem}>
-                            <View style={styles.detailLabelContainer}>
-                              <Feather name="log-out" size={12} color={theme.textMuted} />
-                              <ThemedText type="small" style={styles.detailLabel}>
+                            <View style={[styles.detailLabelContainer, { marginBottom: 2 }]}>
+                              <Feather name="log-out" size={isTinyPhone ? 10 : 11} color={theme.textMuted} />
+                              <ThemedText type="small" style={[styles.detailLabel, { fontSize: detailLabelFontSize }]}>
                                 Check Out
                               </ThemedText>
                             </View>
-                            <ThemedText style={styles.detailValue}>
+                            <ThemedText style={[styles.detailValue, { fontSize: detailValueFontSize, marginTop: 0 }]}>
                               {formatTimeDisplay(entry.check_out_time || entry.check_out)}
                             </ThemedText>
                           </View>
                         </View>
-                        {entry.total_working_minutes && (
+                        {entry.total_working_minutes != null && entry.total_working_minutes !== "" && (
                           <>
-                            <Spacer height={Spacing.md} />
-                            <View style={styles.hoursContainer}>
-                              <View style={styles.hoursIconContainer}>
-                                <Feather name="clock" size={16} color={Colors.dark.primary} />
+                            <Spacer height={Spacing.sm} />
+                            <View style={[styles.hoursContainer, { padding: isTinyPhone ? Spacing.sm : Spacing.md }]}>
+                              <View
+                                style={[
+                                  styles.hoursIconContainer,
+                                  { width: isTinyPhone ? 28 : 30, height: isTinyPhone ? 28 : 30 },
+                                ]}
+                              >
+                                <Feather name="clock" size={isTinyPhone ? 14 : 15} color={Colors.dark.primary} />
                               </View>
-                              <ThemedText style={styles.hoursText}>
+                              <ThemedText style={[styles.hoursText, { fontSize: isTinyPhone ? 12 : 13 }]}>
                                 Duration: {Math.floor(entry.total_working_minutes / 60)}h {entry.total_working_minutes % 60}m
                               </ThemedText>
                             </View>
@@ -864,7 +1012,7 @@ const styles = StyleSheet.create({
     lineHeight: 20,
   },
   recordCard: {
-    borderRadius: BorderRadius.xl,
+    borderRadius: BorderRadius.lg,
     borderWidth: 1,
     borderColor: "#E2E8F0",
     padding: Platform.select({
@@ -892,8 +1040,8 @@ const styles = StyleSheet.create({
   recordHeader: {
     flexDirection: "row",
     alignItems: "center",
-    marginBottom: Spacing.lg,
-    gap: Spacing.md,
+    marginBottom: Spacing.md,
+    gap: Spacing.sm,
   },
   iconContainer: {
     alignItems: "center",
@@ -1281,7 +1429,7 @@ const styles = StyleSheet.create({
     letterSpacing: 0.2,
   },
   multipleEntryCard: {
-    borderRadius: BorderRadius.xl,
+    borderRadius: BorderRadius.lg,
     borderWidth: 1,
     borderColor: "#E2E8F0",
     padding: Platform.select({
@@ -1309,10 +1457,10 @@ const styles = StyleSheet.create({
   multipleEntryHeader: {
     flexDirection: "row",
     alignItems: "center",
-    gap: Spacing.md,
-    marginBottom: Spacing.md,
-    paddingBottom: Spacing.md,
-    borderBottomWidth: 1,
+    gap: Spacing.sm,
+    marginBottom: Spacing.sm,
+    paddingBottom: Spacing.sm,
+    borderBottomWidth: StyleSheet.hairlineWidth,
     borderBottomColor: "#E2E8F0",
   },
   entryNumberBadge: {

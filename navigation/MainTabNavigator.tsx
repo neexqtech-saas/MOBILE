@@ -1,8 +1,8 @@
 import React from "react";
 import { createBottomTabNavigator } from "@react-navigation/bottom-tabs";
 import { Feather } from "@expo/vector-icons";
-import { BlurView } from "expo-blur";
-import { Platform, StyleSheet } from "react-native";
+import { Platform } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import HomeStackNavigator from "@/navigation/HomeStackNavigator";
 import AttendanceStackNavigator from "@/navigation/AttendanceStackNavigator";
 import LeaveStackNavigator from "@/navigation/LeaveStackNavigator";
@@ -13,8 +13,6 @@ import ContactUsScreen from "@/screens/ContactUsScreen";
 import HelpScreen from "@/screens/HelpScreen";
 import AboutUsScreen from "@/screens/AboutUsScreen";
 import { ProfessionalHeader } from "@/components/ProfessionalHeader";
-import { useTheme } from "@/hooks/useTheme";
-import { Colors } from "@/constants/theme";
 
 export type MainTabParamList = {
   HomeTab: undefined;
@@ -31,7 +29,13 @@ export type MainTabParamList = {
 const Tab = createBottomTabNavigator<MainTabParamList>();
 
 export default function MainTabNavigator() {
-  const { theme, isDark } = useTheme();
+  const insets = useSafeAreaInsets();
+  // Room for icon + label above home indicator / Android gesture bar (labels were clipping)
+  const tabBarTopPad = 4;
+  const bottomInset = Math.max(insets.bottom, Platform.OS === "android" ? 12 : 0);
+  const tabBarBottomPad = bottomInset + (Platform.OS === "ios" ? 6 : 8);
+  const tabBarContentMin = 54;
+  const tabBarHeight = tabBarContentMin + tabBarTopPad + tabBarBottomPad;
 
   return (
     <Tab.Navigator
@@ -40,12 +44,16 @@ export default function MainTabNavigator() {
         tabBarActiveTintColor: "#2563EB",
         tabBarInactiveTintColor: "#757575",
         tabBarLabelStyle: {
-          fontSize: 12,
-          fontWeight: "500",
-          marginTop: 4,
+          fontSize: 11,
+          fontWeight: "600",
+          marginTop: 2,
+          marginBottom: 2,
         },
         tabBarIconStyle: {
-          marginTop: 4,
+          marginTop: 2,
+        },
+        tabBarItemStyle: {
+          paddingVertical: 2,
         },
         tabBarStyle: {
           backgroundColor: "#FFFFFF",
@@ -56,9 +64,9 @@ export default function MainTabNavigator() {
           shadowOffset: { width: 0, height: -2 },
           shadowOpacity: 0.1,
           shadowRadius: 4,
-          height: Platform.OS === "ios" ? 88 : 70,
-          paddingBottom: Platform.OS === "ios" ? 28 : 10,
-          paddingTop: 8,
+          height: tabBarHeight,
+          paddingBottom: tabBarBottomPad,
+          paddingTop: tabBarTopPad,
         },
         headerShown: true,
         headerStyle: {
@@ -119,7 +127,9 @@ export default function MainTabNavigator() {
         name="ProfileTab"
         component={ProfileStackNavigator}
         options={{
+          title: "",
           tabBarButton: () => null,
+          headerShown: false,
         }}
       />
       <Tab.Screen

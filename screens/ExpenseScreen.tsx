@@ -1,5 +1,14 @@
-import React, { useState, useEffect, useCallback } from "react";
-import { View, StyleSheet, Pressable, ActivityIndicator, RefreshControl, Alert, Platform, Dimensions } from "react-native";
+import React, { useState, useEffect, useCallback, useMemo } from "react";
+import {
+  View,
+  StyleSheet,
+  Pressable,
+  ActivityIndicator,
+  RefreshControl,
+  Alert,
+  Platform,
+  useWindowDimensions,
+} from "react-native";
 import { Feather } from "@expo/vector-icons";
 import { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { useNavigation, useFocusEffect } from "@react-navigation/native";
@@ -12,6 +21,7 @@ import { useHRMSStore } from "@/store/hrmsStore";
 import { HomeStackParamList } from "@/navigation/HomeStackNavigator";
 import { apiService, ExpenseAPI } from "@/services/api";
 import Spacer from "@/components/Spacer";
+import { getCurrentMonthDates } from "@/utils/dateHelpers";
 
 type ExpenseScreenNavigationProp = NativeStackNavigationProp<
   HomeStackParamList,
@@ -21,7 +31,32 @@ type ExpenseScreenNavigationProp = NativeStackNavigationProp<
 export default function ExpenseScreen() {
   const navigation = useNavigation<ExpenseScreenNavigationProp>();
   const { theme } = useTheme();
+  const { width } = useWindowDimensions();
   const { employee } = useHRMSStore();
+
+  const layout = useMemo(() => {
+    const compact = width < 392;
+    const wide = width >= 560;
+    return {
+      compact,
+      wide,
+      screenHPad: wide ? Spacing.xl : compact ? Spacing.sm + 2 : Spacing.md,
+      screenVPad: compact ? Spacing.md : Spacing.lg,
+      cardPad: compact ? 10 : 12,
+      cardRadius: BorderRadius.lg,
+      sectionGap: compact ? Spacing.sm : Spacing.md,
+      titleFs: compact ? 13.5 : 14.5,
+      amountFs: compact ? 15 : 16,
+      countFs: compact ? 22 : 28,
+      metaFs: compact ? 11 : 12,
+      filterFs: compact ? 10 : 11,
+      filterPadV: compact ? 5 : 7,
+      filterMinH: compact ? 30 : 34,
+      createMinH: compact ? 42 : 46,
+      iconSm: compact ? 11 : 12,
+      iconMd: compact ? 14 : 15,
+    };
+  }, [width]);
 
   const [expenses, setExpenses] = useState<ExpenseAPI[]>([]);
   const [isLoading, setIsLoading] = useState(false);
@@ -46,7 +81,8 @@ export default function ExpenseScreen() {
     setIsLoading(true);
     setError(null);
     try {
-      const response = await apiService.getExpenses(siteId, userId);
+      const { from, to } = getCurrentMonthDates();
+      const response = await apiService.getExpenses(siteId, userId, from, to);
       if (response.status === 200 && response.data) {
         setExpenses(response.data);
         setError(null);
@@ -153,25 +189,31 @@ export default function ExpenseScreen() {
         <RefreshControl refreshing={isRefreshing} onRefresh={onRefresh} />
       }
     >
-      <View style={styles.container}>
+      <View
+        style={[
+          styles.container,
+          { paddingHorizontal: layout.screenHPad, paddingTop: layout.screenVPad, paddingBottom: layout.screenVPad },
+        ]}
+      >
         <Pressable
           onPress={() => navigation.navigate("CreateExpense")}
           style={({ pressed }) => [
             styles.createButton,
+            { minHeight: layout.createMinH, borderRadius: layout.cardRadius },
             pressed && styles.createButtonPressed,
           ]}
         >
-          <View style={styles.createButtonContent}>
-            <View style={styles.createButtonIcon}>
-              <Feather name="plus-circle" size={20} color="#FFFFFF" />
+          <View style={[styles.createButtonContent, { paddingVertical: Spacing.sm, paddingHorizontal: Spacing.md, minHeight: layout.createMinH }]}>
+            <View style={[styles.createButtonIcon, { width: 28, height: 28, borderRadius: 14 }]}>
+              <Feather name="plus-circle" size={layout.iconMd} color="#FFFFFF" />
             </View>
-            <ThemedText style={styles.createButtonText}>
+            <ThemedText style={[styles.createButtonText, { fontSize: layout.compact ? 13.5 : 14.5 }]}>
               Create Expense
             </ThemedText>
           </View>
         </Pressable>
 
-        <Spacer height={Spacing.lg} />
+        <Spacer height={layout.sectionGap} />
 
         {/* Filter Buttons */}
         {!isLoading && expenses.length > 0 && (
@@ -181,6 +223,8 @@ export default function ExpenseScreen() {
               style={({ pressed }) => [
                 styles.filterButton,
                 {
+                  minHeight: layout.filterMinH,
+                  paddingVertical: layout.filterPadV,
                   backgroundColor: filter === 'all' ? Colors.dark.primary : theme.backgroundDefault,
                   borderColor: filter === 'all' ? Colors.dark.primary : theme.border,
                   opacity: pressed ? 0.9 : 1,
@@ -191,7 +235,7 @@ export default function ExpenseScreen() {
                 style={{
                   color: filter === 'all' ? '#000000' : theme.text,
                   fontWeight: filter === 'all' ? '700' : '500',
-                  fontSize: 13,
+                  fontSize: layout.filterFs,
                 }}
               >
                 All
@@ -202,6 +246,8 @@ export default function ExpenseScreen() {
               style={({ pressed }) => [
                 styles.filterButton,
                 {
+                  minHeight: layout.filterMinH,
+                  paddingVertical: layout.filterPadV,
                   backgroundColor: filter === 'pending' ? Colors.dark.primary : theme.backgroundDefault,
                   borderColor: filter === 'pending' ? Colors.dark.primary : theme.border,
                   opacity: pressed ? 0.9 : 1,
@@ -212,7 +258,7 @@ export default function ExpenseScreen() {
                 style={{
                   color: filter === 'pending' ? '#000000' : theme.text,
                   fontWeight: filter === 'pending' ? '700' : '500',
-                  fontSize: 13,
+                  fontSize: layout.filterFs,
                 }}
               >
                 Pending
@@ -223,6 +269,8 @@ export default function ExpenseScreen() {
               style={({ pressed }) => [
                 styles.filterButton,
                 {
+                  minHeight: layout.filterMinH,
+                  paddingVertical: layout.filterPadV,
                   backgroundColor: filter === 'approved' ? Colors.dark.primary : theme.backgroundDefault,
                   borderColor: filter === 'approved' ? Colors.dark.primary : theme.border,
                   opacity: pressed ? 0.9 : 1,
@@ -233,7 +281,7 @@ export default function ExpenseScreen() {
                 style={{
                   color: filter === 'approved' ? '#000000' : theme.text,
                   fontWeight: filter === 'approved' ? '700' : '500',
-                  fontSize: 13,
+                  fontSize: layout.filterFs,
                 }}
               >
                 Approved
@@ -244,6 +292,8 @@ export default function ExpenseScreen() {
               style={({ pressed }) => [
                 styles.filterButton,
                 {
+                  minHeight: layout.filterMinH,
+                  paddingVertical: layout.filterPadV,
                   backgroundColor: filter === 'rejected' ? Colors.dark.primary : theme.backgroundDefault,
                   borderColor: filter === 'rejected' ? Colors.dark.primary : theme.border,
                   opacity: pressed ? 0.9 : 1,
@@ -254,7 +304,7 @@ export default function ExpenseScreen() {
                 style={{
                   color: filter === 'rejected' ? '#000000' : theme.text,
                   fontWeight: filter === 'rejected' ? '700' : '500',
-                  fontSize: 13,
+                  fontSize: layout.filterFs,
                 }}
               >
                 Rejected
@@ -263,39 +313,71 @@ export default function ExpenseScreen() {
           </View>
         )}
 
-        <Spacer height={Spacing.lg} />
+        {/* Date Range Label */}
+        <View style={{ marginBottom: Spacing.xs, marginTop: Spacing.xs }}>
+          <ThemedText type="small" style={{ color: theme.textMuted, fontSize: layout.metaFs, fontWeight: "500" }}>
+            Showing expenses for this month
+          </ThemedText>
+        </View>
 
-        {/* Expenses Count */}
+        <Spacer height={layout.sectionGap} />
+
+        {/* Expenses Count — single compact row */}
         {!isLoading && (
-          <View style={styles.countCard}>
-            <View style={styles.countCardHeader}>
-              <View style={styles.countIconContainer}>
-                <Feather 
-                  name="file-text" 
-                  size={20} 
-                  color={Colors.dark.primary} 
-                />
+          <View
+            style={[
+              styles.countCard,
+              {
+                paddingVertical: layout.compact ? 8 : 10,
+                paddingHorizontal: layout.cardPad + 2,
+                borderRadius: layout.cardRadius,
+                borderColor: theme.border,
+                backgroundColor: theme.cardBackground,
+              },
+            ]}
+          >
+            <View style={styles.countCardRow}>
+              <View style={styles.countCardLeft}>
+                <View style={[styles.countIconContainer, { width: 28, height: 28, borderRadius: BorderRadius.sm }]}>
+                  <Feather name="file-text" size={layout.iconMd} color={Colors.dark.primary} />
+                </View>
+                <ThemedText
+                  type="small"
+                  style={[styles.countLabel, { fontSize: layout.metaFs, color: theme.textMuted }]}
+                >
+                  {filter === "all"
+                    ? "Total"
+                    : filter === "pending"
+                      ? "Pending"
+                      : filter === "approved"
+                        ? "Approved"
+                        : "Rejected"}
+                </ThemedText>
               </View>
-              <ThemedText type="small" style={styles.countLabel}>
-                {filter === 'all' ? 'Total Expenses' : filter === 'pending' ? 'Pending' : filter === 'approved' ? 'Approved' : 'Rejected'}
+              <ThemedText
+                style={{
+                  fontSize: layout.countFs,
+                  fontWeight: "800",
+                  color: Colors.dark.primary,
+                  letterSpacing: -0.4,
+                }}
+              >
+                {filteredExpenses.length}
               </ThemedText>
             </View>
-            <ThemedText type="h1" style={styles.countValue}>
-              {filteredExpenses.length}
-            </ThemedText>
           </View>
         )}
 
-        <Spacer height={Spacing.lg} />
+        <Spacer height={layout.sectionGap} />
 
         {error && !isLoading && (
-          <View style={styles.errorContainer}>
+          <View style={[styles.errorContainer, { borderColor: theme.border }]}>
             <View style={styles.errorIconContainer}>
               <Feather name="alert-circle" size={20} color="#F44336" />
             </View>
             <View style={styles.errorTextContainer}>
               <ThemedText style={styles.errorTitle}>Error</ThemedText>
-              <ThemedText style={styles.errorText}>
+              <ThemedText style={[styles.errorText, { fontSize: layout.metaFs }]}>
                 {error}
               </ThemedText>
             </View>
@@ -315,17 +397,17 @@ export default function ExpenseScreen() {
             <View style={styles.loadingIconContainer}>
               <ActivityIndicator size="large" color={Colors.dark.primary} />
             </View>
-            <ThemedText style={styles.loadingText}>
+            <ThemedText style={[styles.loadingText, { fontSize: layout.metaFs, color: theme.textMuted }]}>
               Loading expenses...
             </ThemedText>
           </View>
         ) : error && expenses.length === 0 ? (
-          <View style={styles.emptyState}>
-            <View style={styles.emptyIconContainer}>
-              <Feather name="alert-circle" size={56} color={Colors.dark.error} />
+          <View style={[styles.emptyState, { borderColor: theme.border, backgroundColor: theme.backgroundDefault }]}>
+            <View style={[styles.emptyIconContainer, { backgroundColor: theme.backgroundSecondary }]}>
+              <Feather name="alert-circle" size={layout.compact ? 40 : 48} color={Colors.dark.error} />
             </View>
-            <ThemedText style={styles.emptyTitle}>Error</ThemedText>
-            <ThemedText style={styles.emptySubtitle}>
+            <ThemedText style={[styles.emptyTitle, { fontSize: layout.compact ? 15 : 16, color: theme.text }]}>Error</ThemedText>
+            <ThemedText style={[styles.emptySubtitle, { fontSize: layout.metaFs, color: theme.textMuted }]}>
               {error}
             </ThemedText>
             <Pressable
@@ -338,23 +420,23 @@ export default function ExpenseScreen() {
             </Pressable>
           </View>
         ) : filteredExpenses.length === 0 ? (
-          <View style={styles.emptyState}>
-            <View style={styles.emptyIconContainer}>
-              <Feather name="dollar-sign" size={56} color={theme.textMuted} />
+          <View style={[styles.emptyState, { borderColor: theme.border, backgroundColor: theme.backgroundDefault }]}>
+            <View style={[styles.emptyIconContainer, { backgroundColor: theme.backgroundSecondary }]}>
+              <Feather name="dollar-sign" size={layout.compact ? 40 : 48} color={theme.textMuted} />
             </View>
-            <ThemedText style={styles.emptyTitle}>
+            <ThemedText style={[styles.emptyTitle, { fontSize: layout.compact ? 15 : 16, color: theme.text }]}>
               {expenses.length === 0
                 ? "No Expenses Yet"
                 : `No ${filter === 'all' ? '' : filter} Expenses`}
             </ThemedText>
-            <ThemedText style={styles.emptySubtitle}>
+            <ThemedText style={[styles.emptySubtitle, { fontSize: layout.metaFs, color: theme.textMuted }]}>
               {expenses.length === 0
                 ? "Create your first expense to get started"
                 : "Try selecting a different filter"}
             </ThemedText>
           </View>
         ) : (
-          <View style={styles.expensesList}>
+          <View style={[styles.expensesList, { gap: layout.sectionGap }]}>
             {filteredExpenses.map((expense) => {
               // Use reimbursement_amount as the approved amount to display
               const displayAmount = expense.reimbursement_amount || expense.amount;
@@ -365,29 +447,65 @@ export default function ExpenseScreen() {
               return (
                 <View
                   key={expense.id}
-                  style={styles.expenseCard}
+                  style={[
+                    styles.expenseCard,
+                    {
+                      padding: layout.cardPad,
+                      borderRadius: layout.cardRadius,
+                      borderColor: theme.border,
+                      backgroundColor: theme.cardBackground,
+                    },
+                  ]}
                 >
                   {/* Header with Title and Amount */}
                   <View style={styles.expenseHeader}>
                     <View style={styles.expenseTitleRow}>
                       <View style={styles.expenseTitleContainer}>
-                        <ThemedText type="h4" style={{ flex: 1, fontWeight: '600', lineHeight: 22 }}>
+                        <ThemedText
+                          numberOfLines={2}
+                          style={{
+                            flex: 1,
+                            fontWeight: "600",
+                            fontSize: layout.titleFs,
+                            lineHeight: layout.titleFs + 5,
+                            color: theme.text,
+                          }}
+                        >
                           {expense.title}
                         </ThemedText>
-                        <View style={styles.dateRow}>
-                          <Feather name="calendar" size={12} color={theme.textMuted} />
-                          <ThemedText type="small" style={{ color: theme.textMuted, marginLeft: Spacing.xs }}>
+                        <View style={[styles.dateRow, { marginTop: 2 }]}>
+                          <Feather name="calendar" size={layout.iconSm} color={theme.textMuted} />
+                          <ThemedText
+                            style={{
+                              color: theme.textMuted,
+                              marginLeft: 4,
+                              fontSize: layout.metaFs,
+                            }}
+                          >
                             {formatDate(expense.expense_date)}
                           </ThemedText>
                         </View>
                       </View>
-                      <View style={styles.amountColumn}>
-                        <ThemedText type="h3" style={{ color: Colors.dark.primary, fontWeight: '700' }}>
+                      <View style={[styles.amountColumn, { minWidth: layout.compact ? 86 : 100 }]}>
+                        <ThemedText
+                          style={{
+                            color: Colors.dark.primary,
+                            fontWeight: "700",
+                            fontSize: layout.amountFs,
+                            letterSpacing: -0.2,
+                          }}
+                        >
                           {formatCurrency(displayAmount)}
                         </ThemedText>
                         {isPartialApproval && (
                           <View style={styles.originalAmountRow}>
-                            <ThemedText type="small" style={{ color: theme.textMuted, textDecorationLine: 'line-through' }}>
+                            <ThemedText
+                              style={{
+                                color: theme.textMuted,
+                                textDecorationLine: "line-through",
+                                fontSize: layout.metaFs,
+                              }}
+                            >
                               {formatCurrency(expense.amount)}
                             </ThemedText>
                           </View>
@@ -398,8 +516,11 @@ export default function ExpenseScreen() {
 
                   {/* Description */}
                   {expense.description && (
-                    <View style={styles.expenseDescription}>
-                      <ThemedText type="small" style={{ color: theme.textMuted, lineHeight: 18 }}>
+                    <View style={[styles.expenseDescription, { borderTopColor: theme.border }]}>
+                      <ThemedText
+                        numberOfLines={3}
+                        style={{ color: theme.textMuted, lineHeight: layout.metaFs + 4, fontSize: layout.metaFs }}
+                      >
                         {expense.description}
                       </ThemedText>
                     </View>
@@ -409,17 +530,17 @@ export default function ExpenseScreen() {
                   {(expense.category_name || expense.project_name) && (
                     <View style={styles.expenseTags}>
                       {expense.category_name && (
-                        <View style={[styles.tag, { backgroundColor: theme.background }]}>
-                          <Feather name="tag" size={12} color={theme.textMuted} />
-                          <ThemedText type="small" style={{ color: theme.textMuted, marginLeft: Spacing.xs }}>
+                        <View style={[styles.tag, { backgroundColor: theme.backgroundDefault, borderWidth: 1, borderColor: theme.border }]}>
+                          <Feather name="tag" size={layout.iconSm} color={theme.textMuted} />
+                          <ThemedText style={{ color: theme.textMuted, marginLeft: 4, fontSize: layout.metaFs }}>
                             {expense.category_name}
                           </ThemedText>
                         </View>
                       )}
                       {expense.project_name && (
-                        <View style={[styles.tag, { backgroundColor: theme.background }]}>
-                          <Feather name="briefcase" size={12} color={theme.textMuted} />
-                          <ThemedText type="small" style={{ color: theme.textMuted, marginLeft: Spacing.xs }}>
+                        <View style={[styles.tag, { backgroundColor: theme.backgroundDefault, borderWidth: 1, borderColor: theme.border }]}>
+                          <Feather name="briefcase" size={layout.iconSm} color={theme.textMuted} />
+                          <ThemedText style={{ color: theme.textMuted, marginLeft: 4, fontSize: layout.metaFs }}>
                             {expense.project_name}
                           </ThemedText>
                         </View>
@@ -428,7 +549,7 @@ export default function ExpenseScreen() {
                   )}
 
                   {/* Status and Approval Details */}
-                  <View style={styles.statusRow}>
+                  <View style={[styles.statusRow, { borderTopColor: theme.border }]}>
                     <View
                       style={[
                         styles.statusBadge,
@@ -462,10 +583,10 @@ export default function ExpenseScreen() {
                         ]}
                       />
                       <ThemedText
-                        type="small"
                         style={[
                           styles.statusText,
                           {
+                            fontSize: layout.metaFs,
                             color:
                               expense.status === "approved"
                                 ? Colors.dark.success
@@ -482,18 +603,18 @@ export default function ExpenseScreen() {
 
                   {/* Approval/Rejection Details */}
                       {expense.status === "approved" && expense.approved_at && (
-                    <View style={styles.detailRow}>
+                    <View style={[styles.detailRow, { borderTopColor: theme.border }]}>
                       <View style={styles.detailItem}>
-                        <Feather name="check" size={12} color={Colors.dark.success} />
-                        <ThemedText type="small" style={{ color: theme.textMuted, marginLeft: Spacing.xs }}>
-                          Approved on {formatDateTime(expense.approved_at)}
+                        <Feather name="check" size={layout.iconSm} color={Colors.dark.success} />
+                        <ThemedText style={{ color: theme.textMuted, marginLeft: 4, fontSize: layout.metaFs, flex: 1 }}>
+                          Approved {formatDateTime(expense.approved_at)}
                         </ThemedText>
                       </View>
                       {expense.approved_by_name && (
                         <View style={styles.detailItem}>
-                          <Feather name="user" size={12} color={theme.textMuted} />
-                          <ThemedText type="small" style={{ color: theme.textMuted, marginLeft: Spacing.xs }}>
-                            by {expense.approved_by_name}
+                          <Feather name="user" size={layout.iconSm} color={theme.textMuted} />
+                          <ThemedText style={{ color: theme.textMuted, marginLeft: 4, fontSize: layout.metaFs, flex: 1 }}>
+                            {expense.approved_by_name}
                           </ThemedText>
                         </View>
                       )}
@@ -501,17 +622,17 @@ export default function ExpenseScreen() {
                   )}
 
                   {expense.status === "rejected" && expense.rejected_at && (
-                    <View style={styles.detailRow}>
+                    <View style={[styles.detailRow, { borderTopColor: theme.border }]}>
                       <View style={styles.detailItem}>
-                        <Feather name="x" size={12} color={Colors.dark.error} />
-                        <ThemedText type="small" style={{ color: theme.textMuted, marginLeft: Spacing.xs }}>
-                          Rejected on {formatDateTime(expense.rejected_at)}
+                        <Feather name="x" size={layout.iconSm} color={Colors.dark.error} />
+                        <ThemedText style={{ color: theme.textMuted, marginLeft: 4, fontSize: layout.metaFs, flex: 1 }}>
+                          Rejected {formatDateTime(expense.rejected_at)}
                         </ThemedText>
                       </View>
                       {expense.rejection_reason && (
                         <View style={styles.detailItem}>
-                          <ThemedText type="small" style={{ color: Colors.dark.error, marginTop: Spacing.xs }}>
-                            Reason: {expense.rejection_reason}
+                          <ThemedText style={{ color: Colors.dark.error, marginTop: 2, fontSize: layout.metaFs }}>
+                            {expense.rejection_reason}
                           </ThemedText>
                         </View>
                       )}
@@ -520,29 +641,29 @@ export default function ExpenseScreen() {
 
                   {/* Reimbursement Details */}
                   {expense.status === "approved" && expense.reimbursement_amount && (
-                    <View style={styles.reimbursementRow}>
+                    <View style={[styles.reimbursementRow, { borderColor: Colors.dark.success + "28" }]}>
                       <View style={styles.reimbursementHeader}>
-                        <Feather name="dollar-sign" size={14} color={Colors.dark.success} />
-                        <ThemedText type="small" style={{ color: Colors.dark.success, marginLeft: Spacing.xs, fontWeight: '600' }}>
-                          Reimbursement Amount
+                        <Feather name="dollar-sign" size={layout.iconMd} color={Colors.dark.success} />
+                        <ThemedText style={{ color: Colors.dark.success, marginLeft: 4, fontWeight: "600", fontSize: layout.metaFs }}>
+                          Reimbursement
                         </ThemedText>
                       </View>
-                      <ThemedText type="h4" style={{ color: Colors.dark.success, marginTop: Spacing.xs, fontWeight: '700' }}>
+                      <ThemedText style={{ color: Colors.dark.success, marginTop: 4, fontWeight: "700", fontSize: layout.amountFs }}>
                         {formatCurrency(expense.reimbursement_amount)}
                       </ThemedText>
                       {expense.reimbursement_date && (
-                        <ThemedText type="small" style={{ color: theme.textMuted, marginTop: Spacing.xs }}>
-                          Scheduled: {formatDate(expense.reimbursement_date)}
+                        <ThemedText style={{ color: theme.textMuted, marginTop: 2, fontSize: layout.metaFs }}>
+                          {formatDate(expense.reimbursement_date)}
                         </ThemedText>
                       )}
                       {expense.reimbursement_mode && (
-                        <ThemedText type="small" style={{ color: theme.textMuted, marginTop: Spacing.xs }}>
-                          Mode: {expense.reimbursement_mode}
+                        <ThemedText style={{ color: theme.textMuted, marginTop: 2, fontSize: layout.metaFs }}>
+                          {expense.reimbursement_mode}
                         </ThemedText>
                       )}
                       {expense.reimbursement_reference && (
-                        <ThemedText type="small" style={{ color: theme.textMuted, marginTop: Spacing.xs }}>
-                          Reference: {expense.reimbursement_reference}
+                        <ThemedText style={{ color: theme.textMuted, marginTop: 2, fontSize: layout.metaFs }} numberOfLines={1}>
+                          Ref: {expense.reimbursement_reference}
                         </ThemedText>
                       )}
                     </View>
@@ -562,11 +683,9 @@ export default function ExpenseScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    padding: Spacing["2xl"],
   },
   createButton: {
     backgroundColor: Colors.dark.primary,
-    borderRadius: BorderRadius.lg,
     ...Platform.select({
       ios: {
         shadowColor: Colors.dark.primary,
@@ -590,14 +709,9 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
-    padding: Spacing.lg,
-    gap: Spacing.md,
-    minHeight: 56,
+    gap: Spacing.sm,
   },
   createButtonIcon: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
     backgroundColor: "rgba(255, 255, 255, 0.2)",
     alignItems: "center",
     justifyContent: "center",
@@ -605,11 +719,7 @@ const styles = StyleSheet.create({
   createButtonText: {
     color: "#FFFFFF",
     fontWeight: "700",
-    fontSize: Platform.select({
-      web: Dimensions.get('window').width > 768 ? 16 : 15,
-      default: 15,
-    }),
-    letterSpacing: 0.5,
+    letterSpacing: 0.3,
   },
   filterContainer: {
     flexDirection: "row",
@@ -619,164 +729,128 @@ const styles = StyleSheet.create({
   },
   filterButton: {
     flex: 1,
-    paddingVertical: Spacing.sm,
-    paddingHorizontal: Spacing.md,
+    paddingHorizontal: Spacing.xs,
     borderRadius: BorderRadius.full,
     alignItems: "center",
     justifyContent: "center",
-    borderWidth: 1.5,
-    minHeight: 36,
-    minWidth: 80,
+    borderWidth: 1,
+    minWidth: 64,
   },
   countCard: {
-    padding: Platform.select({
-      web: Dimensions.get('window').width > 768 ? Spacing.xl : Spacing.lg,
-      default: Spacing.lg,
-    }),
-    borderRadius: BorderRadius.xl,
     borderWidth: 1,
-    borderColor: "#E2E8F0",
-    backgroundColor: "#FFFFFF",
     ...Platform.select({
       ios: {
         shadowColor: "#000",
-        shadowOffset: { width: 0, height: 2 },
-        shadowOpacity: 0.08,
-        shadowRadius: 8,
+        shadowOffset: { width: 0, height: 1 },
+        shadowOpacity: 0.06,
+        shadowRadius: 4,
       },
       android: {
-        elevation: 3,
+        elevation: 2,
       },
       web: {
-        boxShadow: "0 2px 8px rgba(0, 0, 0, 0.08)",
+        boxShadow: "0 1px 4px rgba(0, 0, 0, 0.06)",
       },
     }),
   },
-  countCardHeader: {
+  countCardRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: Spacing.sm,
+  },
+  countCardLeft: {
     flexDirection: "row",
     alignItems: "center",
     gap: Spacing.sm,
+    flex: 1,
+    minWidth: 0,
   },
   countIconContainer: {
-    width: 32,
-    height: 32,
-    borderRadius: BorderRadius.md,
     backgroundColor: Colors.dark.primary + "15",
     alignItems: "center",
     justifyContent: "center",
   },
   countLabel: {
-    color: "#64748B",
     fontWeight: "600",
-    fontSize: 12,
     textTransform: "uppercase",
-    letterSpacing: 0.5,
-  },
-  countValue: {
-    color: Colors.dark.primary,
-    marginTop: Spacing.sm,
-    fontWeight: "800",
-    fontSize: Platform.select({
-      web: Dimensions.get('window').width > 768 ? 48 : 40,
-      default: 40,
-    }),
-    letterSpacing: -1,
+    letterSpacing: 0.4,
+    flexShrink: 1,
   },
   loadingContainer: {
     flex: 1,
     alignItems: "center",
     justifyContent: "center",
-    padding: Spacing["2xl"],
-    minHeight: 200,
+    padding: Spacing.lg,
+    minHeight: 140,
   },
   loadingIconContainer: {
-    width: 64,
-    height: 64,
-    borderRadius: BorderRadius.xl,
+    width: 48,
+    height: 48,
+    borderRadius: BorderRadius.lg,
     backgroundColor: Colors.dark.primary + "10",
     alignItems: "center",
     justifyContent: "center",
-    marginBottom: Spacing.lg,
+    marginBottom: Spacing.md,
   },
   loadingText: {
-    color: "#64748B",
-    fontSize: 14,
     fontWeight: "500",
   },
   emptyState: {
     flex: 1,
     alignItems: "center",
     justifyContent: "center",
-    padding: Platform.select({
-      web: Dimensions.get('window').width > 768 ? Spacing["3xl"] : Spacing["2xl"],
-      default: Spacing["2xl"],
-    }),
-    borderRadius: BorderRadius.xl,
-    minHeight: 300,
-    borderWidth: 1.5,
-    borderColor: "#E2E8F0",
+    padding: Spacing.lg,
+    borderRadius: BorderRadius.lg,
+    minHeight: 220,
+    borderWidth: 1,
     borderStyle: "dashed",
-    backgroundColor: "#F8FAFC",
-    marginHorizontal: Spacing["2xl"],
+    marginHorizontal: 0,
   },
   emptyIconContainer: {
-    width: 80,
-    height: 80,
-    borderRadius: BorderRadius.xl,
-    backgroundColor: "#F1F5F9",
+    width: 64,
+    height: 64,
+    borderRadius: BorderRadius.lg,
     alignItems: "center",
     justifyContent: "center",
-    marginBottom: Spacing.lg,
+    marginBottom: Spacing.md,
   },
   emptyTitle: {
-    fontSize: 18,
     fontWeight: "700",
-    color: "#0F172A",
     marginBottom: Spacing.xs,
   },
   emptySubtitle: {
-    fontSize: 14,
-    color: "#64748B",
     textAlign: "center",
-    lineHeight: 20,
-    marginBottom: Spacing.lg,
-  },
-  expensesList: {
-    gap: Spacing.md,
-  },
-  expenseCard: {
-    padding: Platform.select({
-      web: Dimensions.get('window').width > 768 ? Spacing.xl : Spacing.lg,
-      default: Spacing.lg,
-    }),
-    borderRadius: BorderRadius.xl,
-    borderWidth: 1,
-    borderColor: "#E2E8F0",
+    lineHeight: 18,
     marginBottom: Spacing.md,
-    backgroundColor: "#FFFFFF",
+    paddingHorizontal: Spacing.sm,
+  },
+  expensesList: {},
+  expenseCard: {
+    borderWidth: 1,
     ...Platform.select({
       ios: {
         shadowColor: "#000",
-        shadowOffset: { width: 0, height: 2 },
-        shadowOpacity: 0.08,
-        shadowRadius: 8,
+        shadowOffset: { width: 0, height: 1 },
+        shadowOpacity: 0.05,
+        shadowRadius: 3,
       },
       android: {
-        elevation: 3,
+        elevation: 2,
       },
       web: {
-        boxShadow: "0 2px 8px rgba(0, 0, 0, 0.08)",
+        boxShadow: "0 1px 4px rgba(0, 0, 0, 0.06)",
       },
     }),
   },
   expenseHeader: {
-    marginBottom: Spacing.sm,
+    marginBottom: 4,
   },
   expenseTitleRow: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "flex-start",
-    gap: Spacing.lg,
+    gap: Spacing.sm,
   },
   expenseTitleContainer: {
     flex: 1,
@@ -784,11 +858,9 @@ const styles = StyleSheet.create({
   dateRow: {
     flexDirection: "row",
     alignItems: "center",
-    marginTop: Spacing.xs,
   },
   amountColumn: {
     alignItems: "flex-end",
-    minWidth: 120,
   },
   approvedAmountRow: {
     flexDirection: "row",
@@ -802,77 +874,73 @@ const styles = StyleSheet.create({
     borderTopColor: "rgba(128, 128, 128, 0.1)",
   },
   expenseDescription: {
-    marginTop: Spacing.md,
-    paddingTop: Spacing.md,
-    borderTopWidth: 1,
-    borderTopColor: "rgba(128, 128, 128, 0.1)",
+    marginTop: Spacing.xs,
+    paddingTop: Spacing.xs,
+    borderTopWidth: StyleSheet.hairlineWidth,
   },
   expenseTags: {
     flexDirection: "row",
-    gap: Spacing.sm,
-    marginTop: Spacing.md,
+    gap: 6,
+    marginTop: Spacing.xs,
     flexWrap: "wrap",
   },
   tag: {
     flexDirection: "row",
     alignItems: "center",
-    paddingHorizontal: Spacing.md,
-    paddingVertical: Spacing.xs,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
     borderRadius: BorderRadius.full,
   },
   originalAmountRow: {
     marginTop: Spacing.xs,
   },
   detailRow: {
-    marginTop: Spacing.md,
-    paddingTop: Spacing.md,
-    borderTopWidth: 1,
-    borderTopColor: "rgba(128, 128, 128, 0.1)",
-    gap: Spacing.xs,
+    marginTop: Spacing.xs,
+    paddingTop: Spacing.xs,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    gap: 4,
   },
   detailItem: {
     flexDirection: "row",
     alignItems: "center",
   },
   reimbursementRow: {
-    marginTop: Spacing.md,
-    paddingTop: Spacing.md,
-    padding: Spacing.md,
-    borderRadius: BorderRadius.md,
+    marginTop: Spacing.xs,
+    paddingTop: Spacing.sm,
+    paddingHorizontal: Spacing.sm,
+    paddingBottom: Spacing.sm,
+    borderRadius: BorderRadius.sm,
     backgroundColor: Colors.dark.success + "08",
-    borderWidth: 1,
-    borderColor: Colors.dark.success + "20",
+    borderWidth: StyleSheet.hairlineWidth,
   },
   reimbursementHeader: {
     flexDirection: "row",
     alignItems: "center",
   },
   statusRow: {
-    marginTop: Spacing.md,
-    paddingTop: Spacing.md,
-    borderTopWidth: 1,
-    borderTopColor: "#E2E8F0",
+    marginTop: Spacing.xs,
+    paddingTop: Spacing.xs,
+    borderTopWidth: StyleSheet.hairlineWidth,
   },
   statusBadge: {
     flexDirection: "row",
     alignItems: "center",
     alignSelf: "flex-start",
-    paddingHorizontal: Spacing.md,
-    paddingVertical: Spacing.sm,
-    borderRadius: BorderRadius.md,
-    gap: Spacing.xs,
-    borderWidth: 1,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: BorderRadius.sm,
+    gap: 5,
+    borderWidth: StyleSheet.hairlineWidth,
   },
   statusDot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
+    width: 6,
+    height: 6,
+    borderRadius: 3,
   },
   statusText: {
     textTransform: "capitalize",
     fontWeight: "700",
-    fontSize: 12,
-    letterSpacing: 0.3,
+    letterSpacing: 0.2,
   },
   errorContainer: {
     flexDirection: "row",
@@ -915,12 +983,8 @@ const styles = StyleSheet.create({
     marginBottom: Spacing.xs,
   },
   errorText: {
-    fontSize: Platform.select({
-      web: Dimensions.get('window').width > 768 ? 14 : 13,
-      default: 13,
-    }),
     color: "#991B1B",
-    lineHeight: 20,
+    lineHeight: 18,
   },
   retryButton: {
     paddingHorizontal: Spacing.md,

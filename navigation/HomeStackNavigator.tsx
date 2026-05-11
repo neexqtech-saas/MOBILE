@@ -1,9 +1,15 @@
 import React from "react";
+import { Pressable, StyleSheet } from "react-native";
 import { createNativeStackNavigator } from "@react-navigation/native-stack";
+import { Feather } from "@expo/vector-icons";
+import * as Haptics from "expo-haptics";
+import { useHRMSStore } from "@/store/hrmsStore";
+import { Colors, BorderRadius } from "@/constants/theme";
 import HomeScreen from "@/screens/HomeScreen";
 import PayrollScreen from "@/screens/PayrollScreen";
 import HolidayScreen from "@/screens/HolidayScreen";
 import AnnouncementScreen from "@/screens/AnnouncementScreen";
+import NotificationScreen from "@/screens/NotificationScreen";
 import ExpenseScreen from "@/screens/ExpenseScreen";
 import CreateExpenseScreen from "@/screens/CreateExpenseScreen";
 import VisitScreen from "@/screens/VisitScreen";
@@ -22,9 +28,47 @@ export type HomeStackParamList = {
   CreateExpense: undefined;
   Visits: undefined;
   CreateVisit: undefined;
+  Notifications: undefined;
 };
 
 const Stack = createNativeStackNavigator<HomeStackParamList>();
+
+/** Eye = mark all read; only on full Notifications screen (after View all). */
+function NotificationsHeaderReadAll() {
+  const { unreadNotificationsCount, markAllNotificationsAsRead } = useHRMSStore();
+
+  if (unreadNotificationsCount === 0) {
+    return null;
+  }
+
+  return (
+    <Pressable
+      onPress={() => {
+        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+        void markAllNotificationsAsRead();
+      }}
+      style={({ pressed }) => [styles.readAllBtn, { opacity: pressed ? 0.75 : 1 }]}
+      accessibilityRole="button"
+      accessibilityLabel="Read all notifications"
+      hitSlop={8}
+    >
+      <Feather name="eye" size={20} color={Colors.dark.primary} />
+    </Pressable>
+  );
+}
+
+const styles = StyleSheet.create({
+  readAllBtn: {
+    width: 40,
+    height: 40,
+    borderRadius: BorderRadius.full,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: Colors.dark.primary + "14",
+    borderWidth: 1,
+    borderColor: Colors.dark.primary + "28",
+  },
+});
 
 export default function HomeStackNavigator() {
   const { theme, isDark } = useTheme();
@@ -89,6 +133,20 @@ export default function HomeStackNavigator() {
         component={CreateVisitScreen}
         options={{
           header: () => <ProfessionalHeader title="Create Visit" />,
+        }}
+      />
+      <Stack.Screen
+        name="Notifications"
+        component={NotificationScreen}
+        options={{
+          /** Must be false: global screenOptions use transparent header — otherwise list draws under custom header. */
+          headerTransparent: false,
+          header: () => (
+            <ProfessionalHeader
+              title="Notifications"
+              rightComponent={<NotificationsHeaderReadAll />}
+            />
+          ),
         }}
       />
     </Stack.Navigator>

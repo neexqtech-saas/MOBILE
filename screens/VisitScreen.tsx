@@ -1,5 +1,14 @@
-import React, { useState, useEffect, useCallback } from "react";
-import { View, StyleSheet, Pressable, ActivityIndicator, RefreshControl, Alert, Platform, Dimensions } from "react-native";
+import React, { useState, useCallback, useMemo } from "react";
+import {
+  View,
+  StyleSheet,
+  Pressable,
+  ActivityIndicator,
+  RefreshControl,
+  Alert,
+  Platform,
+  useWindowDimensions,
+} from "react-native";
 import { Feather } from "@expo/vector-icons";
 import { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { useNavigation, useFocusEffect } from "@react-navigation/native";
@@ -14,6 +23,7 @@ import { HomeStackParamList } from "@/navigation/HomeStackNavigator";
 import { apiService, VisitAPI } from "@/services/api";
 import Spacer from "@/components/Spacer";
 import * as Haptics from "expo-haptics";
+import { getCurrentMonthDates } from "@/utils/dateHelpers";
 
 type VisitScreenNavigationProp = NativeStackNavigationProp<
   HomeStackParamList,
@@ -23,7 +33,33 @@ type VisitScreenNavigationProp = NativeStackNavigationProp<
 export default function VisitScreen() {
   const navigation = useNavigation<VisitScreenNavigationProp>();
   const { theme } = useTheme();
+  const { width } = useWindowDimensions();
   const { employee } = useHRMSStore();
+
+  const layout = useMemo(() => {
+    const compact = width < 392;
+    const wide = width >= 560;
+    return {
+      compact,
+      wide,
+      screenHPad: wide ? Spacing.xl : compact ? Spacing.sm + 2 : Spacing.md,
+      screenVPad: compact ? Spacing.md : Spacing.lg,
+      cardPad: compact ? 10 : 12,
+      cardRadius: BorderRadius.lg,
+      sectionGap: compact ? Spacing.sm : Spacing.md,
+      titleFs: compact ? 13.5 : 14.5,
+      countFs: compact ? 22 : 28,
+      metaFs: compact ? 11 : 12,
+      filterFs: compact ? 10 : 11,
+      filterPadV: compact ? 5 : 7,
+      filterMinH: compact ? 30 : 34,
+      createMinH: compact ? 42 : 46,
+      iconSm: compact ? 11 : 12,
+      iconMd: compact ? 14 : 15,
+      actionPadV: compact ? 8 : 10,
+      actionFs: compact ? 12 : 13,
+    };
+  }, [width]);
 
   const [visits, setVisits] = useState<VisitAPI[]>([]);
   const [isLoading, setIsLoading] = useState(false);
@@ -49,7 +85,8 @@ export default function VisitScreen() {
     setIsLoading(true);
     setError(null);
     try {
-      const response = await apiService.getVisits(siteId, userId);
+      const { from, to } = getCurrentMonthDates();
+      const response = await apiService.getVisits(siteId, userId, from, to);
       if (response.status === 200 && response.data) {
         // Handle both paginated response (with results) and direct array response
         const visitsList = Array.isArray(response.data) 
@@ -296,25 +333,31 @@ export default function VisitScreen() {
         <RefreshControl refreshing={isRefreshing} onRefresh={onRefresh} />
       }
     >
-      <View style={styles.container}>
+      <View
+        style={[
+          styles.container,
+          { paddingHorizontal: layout.screenHPad, paddingTop: layout.screenVPad, paddingBottom: layout.screenVPad },
+        ]}
+      >
         <Pressable
           onPress={() => navigation.navigate("CreateVisit")}
           style={({ pressed }) => [
             styles.createButton,
+            { minHeight: layout.createMinH, borderRadius: layout.cardRadius },
             pressed && styles.createButtonPressed,
           ]}
         >
-          <View style={styles.createButtonContent}>
-            <View style={styles.createButtonIcon}>
-              <Feather name="plus-circle" size={20} color="#FFFFFF" />
+          <View style={[styles.createButtonContent, { paddingVertical: Spacing.sm, paddingHorizontal: Spacing.md, minHeight: layout.createMinH }]}>
+            <View style={[styles.createButtonIcon, { width: 28, height: 28, borderRadius: 14 }]}>
+              <Feather name="plus-circle" size={layout.iconMd} color="#FFFFFF" />
             </View>
-            <ThemedText style={styles.createButtonText}>
+            <ThemedText style={[styles.createButtonText, { fontSize: layout.compact ? 13.5 : 14.5 }]}>
               Create Visit
             </ThemedText>
           </View>
         </Pressable>
 
-        <Spacer height={Spacing.lg} />
+        <Spacer height={layout.sectionGap} />
 
         {/* Filter Buttons */}
         {!isLoading && visits.length > 0 && (
@@ -324,20 +367,20 @@ export default function VisitScreen() {
               style={({ pressed }) => [
                 styles.filterButton,
                 {
+                  minHeight: layout.filterMinH,
+                  paddingVertical: layout.filterPadV,
                   backgroundColor: filter === 'all' ? Colors.dark.primary : theme.backgroundDefault,
-                  borderColor: filter === 'all' ? Colors.dark.primary : "#E2E8F0",
+                  borderColor: filter === 'all' ? Colors.dark.primary : theme.border,
                   opacity: pressed ? 0.9 : 1,
                 },
               ]}
             >
               <ThemedText
-                style={[
-                  styles.filterText,
-                  {
-                    color: filter === 'all' ? '#FFFFFF' : theme.text,
-                    fontWeight: filter === 'all' ? '700' : '600',
-                  },
-                ]}
+                style={{
+                  color: filter === 'all' ? '#FFFFFF' : theme.text,
+                  fontWeight: filter === 'all' ? '700' : '600',
+                  fontSize: layout.filterFs,
+                }}
               >
                 All
               </ThemedText>
@@ -347,20 +390,20 @@ export default function VisitScreen() {
               style={({ pressed }) => [
                 styles.filterButton,
                 {
+                  minHeight: layout.filterMinH,
+                  paddingVertical: layout.filterPadV,
                   backgroundColor: filter === 'pending' ? Colors.dark.primary : theme.backgroundDefault,
-                  borderColor: filter === 'pending' ? Colors.dark.primary : "#E2E8F0",
+                  borderColor: filter === 'pending' ? Colors.dark.primary : theme.border,
                   opacity: pressed ? 0.9 : 1,
                 },
               ]}
             >
               <ThemedText
-                style={[
-                  styles.filterText,
-                  {
-                    color: filter === 'pending' ? '#FFFFFF' : theme.text,
-                    fontWeight: filter === 'pending' ? '700' : '600',
-                  },
-                ]}
+                style={{
+                  color: filter === 'pending' ? '#FFFFFF' : theme.text,
+                  fontWeight: filter === 'pending' ? '700' : '600',
+                  fontSize: layout.filterFs,
+                }}
               >
                 Pending
               </ThemedText>
@@ -370,22 +413,22 @@ export default function VisitScreen() {
               style={({ pressed }) => [
                 styles.filterButton,
                 {
+                  minHeight: layout.filterMinH,
+                  paddingVertical: layout.filterPadV,
                   backgroundColor: filter === 'in_progress' ? Colors.dark.primary : theme.backgroundDefault,
-                  borderColor: filter === 'in_progress' ? Colors.dark.primary : "#E2E8F0",
+                  borderColor: filter === 'in_progress' ? Colors.dark.primary : theme.border,
                   opacity: pressed ? 0.9 : 1,
                 },
               ]}
             >
               <ThemedText
-                style={[
-                  styles.filterText,
-                  {
-                    color: filter === 'in_progress' ? '#FFFFFF' : theme.text,
-                    fontWeight: filter === 'in_progress' ? '700' : '600',
-                  },
-                ]}
+                style={{
+                  color: filter === 'in_progress' ? '#FFFFFF' : theme.text,
+                  fontWeight: filter === 'in_progress' ? '700' : '600',
+                  fontSize: layout.filterFs,
+                }}
               >
-                In Progress
+                {layout.compact ? "Active" : "In Progress"}
               </ThemedText>
             </Pressable>
             <Pressable
@@ -393,68 +436,102 @@ export default function VisitScreen() {
               style={({ pressed }) => [
                 styles.filterButton,
                 {
+                  minHeight: layout.filterMinH,
+                  paddingVertical: layout.filterPadV,
                   backgroundColor: filter === 'completed' ? Colors.dark.primary : theme.backgroundDefault,
-                  borderColor: filter === 'completed' ? Colors.dark.primary : "#E2E8F0",
+                  borderColor: filter === 'completed' ? Colors.dark.primary : theme.border,
                   opacity: pressed ? 0.9 : 1,
                 },
               ]}
             >
               <ThemedText
-                style={[
-                  styles.filterText,
-                  {
-                    color: filter === 'completed' ? '#FFFFFF' : theme.text,
-                    fontWeight: filter === 'completed' ? '700' : '600',
-                  },
-                ]}
+                style={{
+                  color: filter === 'completed' ? '#FFFFFF' : theme.text,
+                  fontWeight: filter === 'completed' ? '700' : '600',
+                  fontSize: layout.filterFs,
+                }}
               >
-                Completed
+                {layout.compact ? "Done" : "Completed"}
               </ThemedText>
             </Pressable>
           </View>
         )}
 
-        <Spacer height={Spacing.lg} />
+        {/* Date Range Label */}
+        <View style={{ marginBottom: Spacing.xs, marginTop: Spacing.xs }}>
+          <ThemedText type="small" style={{ color: theme.textMuted, fontSize: layout.metaFs, fontWeight: "500" }}>
+            Showing visits for this month
+          </ThemedText>
+        </View>
 
-        {/* Visits Count */}
+        <Spacer height={layout.sectionGap} />
+
         {!isLoading && (
-          <View style={styles.countCard}>
-            <View style={styles.countCardHeader}>
-              <View style={styles.countIconContainer}>
-                <Feather 
-                  name="map-pin" 
-                  size={20} 
-                  color={Colors.dark.primary} 
-                />
+          <View
+            style={[
+              styles.countCard,
+              {
+                paddingVertical: layout.compact ? 8 : 10,
+                paddingHorizontal: layout.cardPad + 2,
+                borderRadius: layout.cardRadius,
+                borderColor: theme.border,
+                backgroundColor: theme.cardBackground,
+              },
+            ]}
+          >
+            <View style={styles.countCardRow}>
+              <View style={styles.countCardLeft}>
+                <View style={[styles.countIconContainer, { width: 28, height: 28, borderRadius: BorderRadius.sm }]}>
+                  <Feather name="map-pin" size={layout.iconMd} color={Colors.dark.primary} />
+                </View>
+                <ThemedText type="small" style={[styles.countLabel, { fontSize: layout.metaFs, color: theme.textMuted }]}>
+                  {filter === "all"
+                    ? "Total"
+                    : filter === "pending"
+                      ? "Pending"
+                      : filter === "scheduled"
+                        ? "Sched."
+                        : filter === "in_progress"
+                          ? layout.compact
+                            ? "Active"
+                            : "In progress"
+                          : layout.compact
+                            ? "Done"
+                            : "Completed"}
+                </ThemedText>
               </View>
-              <ThemedText type="small" style={styles.countLabel}>
-                {filter === 'all' ? 'Total Visits' : filter === 'pending' ? 'Pending' : filter === 'scheduled' ? 'Scheduled' : filter === 'in_progress' ? 'In Progress' : 'Completed'}
+              <ThemedText
+                style={{
+                  fontSize: layout.countFs,
+                  fontWeight: "800",
+                  color: Colors.dark.primary,
+                  letterSpacing: -0.4,
+                }}
+              >
+                {filteredVisits.length}
               </ThemedText>
             </View>
-            <ThemedText type="h1" style={styles.countValue}>
-              {filteredVisits.length}
-            </ThemedText>
           </View>
         )}
 
-        <Spacer height={Spacing.lg} />
+        <Spacer height={layout.sectionGap} />
 
         {isLoading ? (
           <View style={styles.loadingContainer}>
             <View style={styles.loadingIconContainer}>
               <ActivityIndicator size="large" color={Colors.dark.primary} />
             </View>
-            <ThemedText style={styles.loadingText}>
+            <ThemedText style={[styles.loadingText, { fontSize: layout.metaFs, color: theme.textMuted }]}>
               Loading visits...
             </ThemedText>
           </View>
         ) : error && visits.length === 0 ? (
-          <View style={styles.emptyState}>
-            <View style={styles.emptyIconContainer}>
-              <Feather name="alert-circle" size={56} color={Colors.dark.error} />
+          <View style={[styles.emptyState, { borderColor: theme.border, backgroundColor: theme.backgroundDefault }]}>
+            <View style={[styles.emptyIconContainer, { backgroundColor: theme.backgroundSecondary }]}>
+              <Feather name="alert-circle" size={layout.compact ? 40 : 48} color={Colors.dark.error} />
             </View>
-            <ThemedText style={styles.emptyTitle}>Error</ThemedText>
-            <ThemedText style={styles.emptySubtitle}>
+            <ThemedText style={[styles.emptyTitle, { fontSize: layout.compact ? 15 : 16, color: theme.text }]}>Error</ThemedText>
+            <ThemedText style={[styles.emptySubtitle, { fontSize: layout.metaFs, color: theme.textMuted }]}>
               {error}
             </ThemedText>
             <Pressable
@@ -467,23 +544,23 @@ export default function VisitScreen() {
             </Pressable>
           </View>
         ) : filteredVisits.length === 0 ? (
-          <View style={styles.emptyState}>
-            <View style={styles.emptyIconContainer}>
-              <Feather name="map-pin" size={56} color={theme.textMuted} />
+          <View style={[styles.emptyState, { borderColor: theme.border, backgroundColor: theme.backgroundDefault }]}>
+            <View style={[styles.emptyIconContainer, { backgroundColor: theme.backgroundSecondary }]}>
+              <Feather name="map-pin" size={layout.compact ? 40 : 48} color={theme.textMuted} />
             </View>
-            <ThemedText style={styles.emptyTitle}>
+            <ThemedText style={[styles.emptyTitle, { fontSize: layout.compact ? 15 : 16, color: theme.text }]}>
               {visits.length === 0
                 ? "No Visits Yet"
                 : `No ${filter === 'all' ? '' : filter.replace('_', ' ')} Visits`}
             </ThemedText>
-            <ThemedText style={styles.emptySubtitle}>
+            <ThemedText style={[styles.emptySubtitle, { fontSize: layout.metaFs, color: theme.textMuted }]}>
               {visits.length === 0
                 ? "Create your first visit to get started"
                 : "Try selecting a different filter"}
             </ThemedText>
           </View>
         ) : (
-          <View style={styles.visitsList}>
+          <View style={[styles.visitsList, { gap: layout.sectionGap }]}>
             {filteredVisits.map((visit) => {
               const canCheckIn = (visit.status === 'scheduled' || visit.status === 'pending') && !visit.check_in_timestamp;
               const canCheckOut = visit.status === 'in_progress' && visit.check_in_timestamp && !visit.check_out_timestamp;
@@ -491,65 +568,75 @@ export default function VisitScreen() {
               return (
                 <View
                   key={visit.id}
-                  style={styles.visitCard}
+                  style={[
+                    styles.visitCard,
+                    {
+                      padding: layout.cardPad,
+                      borderRadius: layout.cardRadius,
+                      borderColor: theme.border,
+                      backgroundColor: theme.cardBackground,
+                    },
+                  ]}
                 >
-                  {/* Header */}
                   <View style={styles.visitHeader}>
                     <View style={styles.visitTitleContainer}>
-                      <ThemedText type="h4" style={styles.visitTitle}>
+                      <ThemedText
+                        numberOfLines={2}
+                        style={[styles.visitTitle, { fontSize: layout.titleFs, color: theme.text }]}
+                      >
                         {visit.title}
                       </ThemedText>
-                      <View style={styles.dateTimeRow}>
-                        <Feather name="calendar" size={12} color={theme.textMuted} />
-                        <ThemedText type="small" style={styles.dateTimeText}>
-                          {formatDate(visit.schedule_date)} at {formatTime(visit.schedule_time)}
+                      <View style={[styles.dateTimeRow, { marginTop: 2 }]}>
+                        <Feather name="calendar" size={layout.iconSm} color={theme.textMuted} />
+                        <ThemedText style={[styles.dateTimeText, { fontSize: layout.metaFs, color: theme.textMuted }]}>
+                          {formatDate(visit.schedule_date)} · {formatTime(visit.schedule_time)}
                         </ThemedText>
                       </View>
                     </View>
                   </View>
 
-                  {/* Description */}
                   {visit.description && (
-                    <View style={styles.visitDescription}>
-                      <ThemedText type="small" style={{ color: theme.textMuted, lineHeight: 18 }}>
+                    <View style={[styles.visitDescription, { borderTopColor: theme.border }]}>
+                      <ThemedText
+                        numberOfLines={3}
+                        style={{ color: theme.textMuted, lineHeight: layout.metaFs + 4, fontSize: layout.metaFs }}
+                      >
                         {visit.description}
                       </ThemedText>
                     </View>
                   )}
 
-                  {/* Client Info */}
-                  <View style={styles.clientInfo}>
+                  <View style={[styles.clientInfo, { borderTopColor: theme.border }]}>
                     <View style={styles.clientRow}>
-                      <View style={styles.clientIconContainer}>
-                        <Feather name="user" size={14} color={Colors.dark.primary} />
+                      <View style={[styles.clientIconContainer, { backgroundColor: theme.backgroundSecondary }]}>
+                        <Feather name="user" size={layout.iconMd} color={Colors.dark.primary} />
                       </View>
-                      <ThemedText type="small" style={styles.clientName}>
+                      <ThemedText style={[styles.clientName, { fontSize: layout.metaFs + 0.5, color: theme.text }]}>
                         {visit.client_name}
                       </ThemedText>
                     </View>
                     {visit.contact_person && (
                       <View style={styles.clientRow}>
-                        <View style={styles.clientIconContainer}>
-                          <Feather name="phone" size={14} color={theme.textMuted} />
+                        <View style={[styles.clientIconContainer, { backgroundColor: theme.backgroundSecondary }]}>
+                          <Feather name="phone" size={layout.iconMd} color={theme.textMuted} />
                         </View>
-                        <ThemedText type="small" style={styles.clientContact}>
+                        <ThemedText style={[styles.clientContact, { fontSize: layout.metaFs, color: theme.textMuted }]}>
                           {visit.contact_person} - {visit.contact_phone}
                         </ThemedText>
                       </View>
                     )}
                     <View style={styles.clientRow}>
-                      <View style={styles.clientIconContainer}>
-                        <Feather name="map-pin" size={14} color={theme.textMuted} />
+                      <View style={[styles.clientIconContainer, { backgroundColor: theme.backgroundSecondary }]}>
+                        <Feather name="map-pin" size={layout.iconMd} color={theme.textMuted} />
                       </View>
-                      <ThemedText type="small" style={styles.clientAddress}>
+                      <ThemedText style={[styles.clientAddress, { fontSize: layout.metaFs, color: theme.textMuted }]}>
                         {visit.address}, {visit.city}, {visit.state} - {visit.pincode}
                       </ThemedText>
                     </View>
                   </View>
 
-                  {/* Status Badge */}
                   {visit.status && (
-                    <View style={styles.statusRow}>
+                    <View style={[styles.statusRow, { borderTopColor: theme.border }]}>
                       <View
                         style={[
                           styles.statusBadge,
@@ -595,10 +682,10 @@ export default function VisitScreen() {
                           ]}
                         />
                         <ThemedText
-                          type="small"
                           style={[
                             styles.statusText,
                             {
+                              fontSize: layout.metaFs,
                               color:
                               visit.status === "completed"
                                 ? Colors.dark.success
@@ -618,8 +705,7 @@ export default function VisitScreen() {
                     </View>
                   )}
 
-                  {/* Action Buttons */}
-                  <View style={styles.actionButtons}>
+                  <View style={[styles.actionButtons, { borderTopColor: theme.border }]}>
                     {canCheckIn && (
                       <Pressable
                         onPress={() => handleCheckIn(visit.id)}
@@ -627,9 +713,7 @@ export default function VisitScreen() {
                         style={({ pressed }) => [
                           styles.actionButton,
                           styles.checkInButton,
-                          {
-                            opacity: pressed || checkingIn === visit.id ? 0.9 : 1,
-                          },
+                          { paddingVertical: layout.actionPadV, opacity: pressed || checkingIn === visit.id ? 0.9 : 1 },
                           pressed && styles.actionButtonPressed,
                         ]}
                       >
@@ -637,8 +721,8 @@ export default function VisitScreen() {
                           <ActivityIndicator size="small" color="#FFFFFF" />
                         ) : (
                           <>
-                            <Feather name="log-in" size={16} color="#FFFFFF" />
-                            <ThemedText style={styles.checkInButtonText}>
+                            <Feather name="log-in" size={layout.iconMd} color="#FFFFFF" />
+                            <ThemedText style={[styles.checkInButtonText, { fontSize: layout.actionFs }]}>
                               Check In
                             </ThemedText>
                           </>
@@ -652,9 +736,7 @@ export default function VisitScreen() {
                         style={({ pressed }) => [
                           styles.actionButton,
                           styles.checkOutButton,
-                          {
-                            opacity: pressed || checkingOut === visit.id ? 0.9 : 1,
-                          },
+                          { paddingVertical: layout.actionPadV, opacity: pressed || checkingOut === visit.id ? 0.9 : 1 },
                           pressed && styles.actionButtonPressed,
                         ]}
                       >
@@ -662,8 +744,8 @@ export default function VisitScreen() {
                           <ActivityIndicator size="small" color="#FFFFFF" />
                         ) : (
                           <>
-                            <Feather name="log-out" size={16} color="#FFFFFF" />
-                            <ThemedText style={styles.checkOutButtonText}>
+                            <Feather name="log-out" size={layout.iconMd} color="#FFFFFF" />
+                            <ThemedText style={[styles.checkOutButtonText, { fontSize: layout.actionFs }]}>
                               Check Out
                             </ThemedText>
                           </>
@@ -672,17 +754,17 @@ export default function VisitScreen() {
                     )}
                     {visit.check_in_timestamp && (
                       <View style={styles.timeInfo}>
-                        <Feather name="clock" size={12} color={theme.textMuted} />
-                        <ThemedText type="small" style={{ color: theme.textMuted, marginLeft: Spacing.xs }}>
-                          Checked in: {new Date(visit.check_in_timestamp).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}
+                        <Feather name="clock" size={layout.iconSm} color={theme.textMuted} />
+                        <ThemedText style={{ color: theme.textMuted, marginLeft: 4, fontSize: layout.metaFs }}>
+                          In {new Date(visit.check_in_timestamp).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}
                         </ThemedText>
                       </View>
                     )}
                     {visit.check_out_timestamp && (
                       <View style={styles.timeInfo}>
-                        <Feather name="check" size={12} color={Colors.dark.success} />
-                        <ThemedText type="small" style={{ color: Colors.dark.success, marginLeft: Spacing.xs }}>
-                          Checked out: {new Date(visit.check_out_timestamp).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}
+                        <Feather name="check" size={layout.iconSm} color={Colors.dark.success} />
+                        <ThemedText style={{ color: Colors.dark.success, marginLeft: 4, fontSize: layout.metaFs }}>
+                          Out {new Date(visit.check_out_timestamp).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}
                         </ThemedText>
                       </View>
                     )}
@@ -702,11 +784,9 @@ export default function VisitScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    padding: Spacing["2xl"],
   },
   createButton: {
     backgroundColor: Colors.dark.primary,
-    borderRadius: BorderRadius.lg,
     ...Platform.select({
       ios: {
         shadowColor: Colors.dark.primary,
@@ -730,14 +810,9 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
-    padding: Spacing.lg,
-    gap: Spacing.md,
-    minHeight: 56,
+    gap: Spacing.sm,
   },
   createButtonIcon: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
     backgroundColor: "rgba(255, 255, 255, 0.2)",
     alignItems: "center",
     justifyContent: "center",
@@ -745,11 +820,7 @@ const styles = StyleSheet.create({
   createButtonText: {
     color: "#FFFFFF",
     fontWeight: "700",
-    fontSize: Platform.select({
-      web: Dimensions.get('window').width > 768 ? 16 : 15,
-      default: 15,
-    }),
-    letterSpacing: 0.5,
+    letterSpacing: 0.3,
   },
   filterContainer: {
     flexDirection: "row",
@@ -759,131 +830,101 @@ const styles = StyleSheet.create({
   },
   filterButton: {
     flex: 1,
-    paddingVertical: Spacing.sm,
-    paddingHorizontal: Spacing.md,
+    paddingHorizontal: Spacing.xs,
     borderRadius: BorderRadius.full,
     alignItems: "center",
     justifyContent: "center",
-    borderWidth: 1.5,
-    minHeight: 36,
-    minWidth: 80,
-  },
-  filterText: {
-    fontSize: 13,
-    letterSpacing: 0.2,
+    borderWidth: 1,
+    minWidth: 64,
   },
   countCard: {
-    padding: Platform.select({
-      web: Dimensions.get('window').width > 768 ? Spacing.xl : Spacing.lg,
-      default: Spacing.lg,
-    }),
-    borderRadius: BorderRadius.xl,
     borderWidth: 1,
-    borderColor: "#E2E8F0",
-    backgroundColor: "#FFFFFF",
     ...Platform.select({
       ios: {
         shadowColor: "#000",
-        shadowOffset: { width: 0, height: 2 },
-        shadowOpacity: 0.08,
-        shadowRadius: 8,
+        shadowOffset: { width: 0, height: 1 },
+        shadowOpacity: 0.06,
+        shadowRadius: 4,
       },
       android: {
-        elevation: 3,
+        elevation: 2,
       },
       web: {
-        boxShadow: "0 2px 8px rgba(0, 0, 0, 0.08)",
+        boxShadow: "0 1px 4px rgba(0, 0, 0, 0.06)",
       },
     }),
   },
-  countCardHeader: {
+  countCardRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: Spacing.sm,
+  },
+  countCardLeft: {
     flexDirection: "row",
     alignItems: "center",
     gap: Spacing.sm,
+    flex: 1,
+    minWidth: 0,
   },
   countIconContainer: {
-    width: 32,
-    height: 32,
-    borderRadius: BorderRadius.md,
     backgroundColor: Colors.dark.primary + "15",
     alignItems: "center",
     justifyContent: "center",
   },
   countLabel: {
-    color: "#64748B",
     fontWeight: "600",
-    fontSize: 12,
     textTransform: "uppercase",
-    letterSpacing: 0.5,
-  },
-  countValue: {
-    color: Colors.dark.primary,
-    marginTop: Spacing.sm,
-    fontWeight: "800",
-    fontSize: Platform.select({
-      web: Dimensions.get('window').width > 768 ? 48 : 40,
-      default: 40,
-    }),
-    letterSpacing: -1,
+    letterSpacing: 0.4,
+    flexShrink: 1,
   },
   loadingContainer: {
     flex: 1,
     alignItems: "center",
     justifyContent: "center",
-    padding: Spacing["2xl"],
-    minHeight: 200,
+    padding: Spacing.lg,
+    minHeight: 140,
   },
   loadingIconContainer: {
-    width: 64,
-    height: 64,
-    borderRadius: BorderRadius.xl,
+    width: 48,
+    height: 48,
+    borderRadius: BorderRadius.lg,
     backgroundColor: Colors.dark.primary + "10",
     alignItems: "center",
     justifyContent: "center",
-    marginBottom: Spacing.lg,
+    marginBottom: Spacing.md,
   },
   loadingText: {
-    color: "#64748B",
-    fontSize: 14,
     fontWeight: "500",
   },
   emptyState: {
     flex: 1,
     alignItems: "center",
     justifyContent: "center",
-    padding: Platform.select({
-      web: Dimensions.get('window').width > 768 ? Spacing["3xl"] : Spacing["2xl"],
-      default: Spacing["2xl"],
-    }),
-    borderRadius: BorderRadius.xl,
-    minHeight: 300,
-    borderWidth: 1.5,
-    borderColor: "#E2E8F0",
+    padding: Spacing.lg,
+    borderRadius: BorderRadius.lg,
+    minHeight: 220,
+    borderWidth: 1,
     borderStyle: "dashed",
-    backgroundColor: "#F8FAFC",
-    marginHorizontal: Spacing["2xl"],
+    marginHorizontal: 0,
   },
   emptyIconContainer: {
-    width: 80,
-    height: 80,
-    borderRadius: BorderRadius.xl,
-    backgroundColor: "#F1F5F9",
+    width: 64,
+    height: 64,
+    borderRadius: BorderRadius.lg,
     alignItems: "center",
     justifyContent: "center",
-    marginBottom: Spacing.lg,
+    marginBottom: Spacing.md,
   },
   emptyTitle: {
-    fontSize: 18,
     fontWeight: "700",
-    color: "#0F172A",
     marginBottom: Spacing.xs,
   },
   emptySubtitle: {
-    fontSize: 14,
-    color: "#64748B",
     textAlign: "center",
-    lineHeight: 20,
-    marginBottom: Spacing.lg,
+    lineHeight: 18,
+    marginBottom: Spacing.md,
+    paddingHorizontal: Spacing.sm,
   },
   retryButtonLarge: {
     paddingHorizontal: Spacing.lg,
@@ -899,73 +940,52 @@ const styles = StyleSheet.create({
     fontWeight: "700",
     fontSize: 14,
   },
-  visitsList: {
-    gap: Spacing.md,
-  },
+  visitsList: {},
   visitCard: {
-    padding: Platform.select({
-      web: Dimensions.get('window').width > 768 ? Spacing.xl : Spacing.lg,
-      default: Spacing.lg,
-    }),
-    borderRadius: BorderRadius.xl,
     borderWidth: 1,
-    borderColor: "#E2E8F0",
-    marginBottom: Spacing.md,
-    backgroundColor: "#FFFFFF",
     ...Platform.select({
       ios: {
         shadowColor: "#000",
-        shadowOffset: { width: 0, height: 2 },
-        shadowOpacity: 0.08,
-        shadowRadius: 8,
+        shadowOffset: { width: 0, height: 1 },
+        shadowOpacity: 0.05,
+        shadowRadius: 3,
       },
       android: {
-        elevation: 3,
+        elevation: 2,
       },
       web: {
-        boxShadow: "0 2px 8px rgba(0, 0, 0, 0.08)",
+        boxShadow: "0 1px 4px rgba(0, 0, 0, 0.06)",
       },
     }),
   },
   visitHeader: {
-    marginBottom: Spacing.md,
+    marginBottom: 4,
   },
   visitTitleContainer: {
     flex: 1,
   },
   visitTitle: {
-    fontSize: Platform.select({
-      web: Dimensions.get('window').width > 768 ? 20 : 18,
-      default: 18,
-    }),
-    fontWeight: "700",
-    color: "#0F172A",
-    marginBottom: Spacing.xs,
-    letterSpacing: -0.2,
+    fontWeight: "600",
+    letterSpacing: -0.15,
   },
   dateTimeRow: {
     flexDirection: "row",
     alignItems: "center",
-    marginTop: Spacing.xs,
-    gap: Spacing.xs,
+    gap: 4,
   },
   dateTimeText: {
-    color: "#64748B",
-    fontSize: 12,
     fontWeight: "500",
   },
   visitDescription: {
-    marginTop: Spacing.md,
-    paddingTop: Spacing.md,
-    borderTopWidth: 1,
-    borderTopColor: "#E2E8F0",
+    marginTop: Spacing.xs,
+    paddingTop: Spacing.xs,
+    borderTopWidth: StyleSheet.hairlineWidth,
   },
   clientInfo: {
-    marginTop: Spacing.md,
-    paddingTop: Spacing.md,
-    borderTopWidth: 1,
-    borderTopColor: "#E2E8F0",
-    gap: Spacing.sm,
+    marginTop: Spacing.xs,
+    paddingTop: Spacing.xs,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    gap: 6,
   },
   clientRow: {
     flexDirection: "row",
@@ -973,69 +993,61 @@ const styles = StyleSheet.create({
     gap: Spacing.sm,
   },
   clientIconContainer: {
-    width: 24,
-    height: 24,
+    width: 22,
+    height: 22,
     borderRadius: BorderRadius.sm,
-    backgroundColor: "#F1F5F9",
     alignItems: "center",
     justifyContent: "center",
   },
   clientName: {
-    color: "#0F172A",
     fontWeight: "600",
-    fontSize: 13,
+    flex: 1,
   },
   clientContact: {
-    color: "#64748B",
-    fontSize: 12,
+    flex: 1,
   },
   clientAddress: {
-    color: "#64748B",
-    fontSize: 12,
     flex: 1,
-    lineHeight: 18,
+    lineHeight: 16,
   },
   statusRow: {
-    marginTop: Spacing.md,
-    paddingTop: Spacing.md,
-    borderTopWidth: 1,
-    borderTopColor: "#E2E8F0",
+    marginTop: Spacing.xs,
+    paddingTop: Spacing.xs,
+    borderTopWidth: StyleSheet.hairlineWidth,
   },
   statusBadge: {
     flexDirection: "row",
     alignItems: "center",
     alignSelf: "flex-start",
-    paddingHorizontal: Spacing.md,
-    paddingVertical: Spacing.sm,
-    borderRadius: BorderRadius.md,
-    gap: Spacing.xs,
-    borderWidth: 1,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: BorderRadius.sm,
+    gap: 5,
+    borderWidth: StyleSheet.hairlineWidth,
   },
   statusDot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
+    width: 6,
+    height: 6,
+    borderRadius: 3,
   },
   statusText: {
     textTransform: "capitalize",
     fontWeight: "700",
-    fontSize: 12,
-    letterSpacing: 0.3,
+    letterSpacing: 0.2,
   },
   actionButtons: {
-    marginTop: Spacing.md,
-    paddingTop: Spacing.md,
-    borderTopWidth: 1,
-    borderTopColor: "#E2E8F0",
-    gap: Spacing.sm,
+    marginTop: Spacing.xs,
+    paddingTop: Spacing.xs,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    gap: Spacing.xs,
   },
   actionButton: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
-    padding: Spacing.md,
-    borderRadius: BorderRadius.md,
-    gap: Spacing.xs,
+    paddingHorizontal: Spacing.md,
+    borderRadius: BorderRadius.sm,
+    gap: 6,
   },
   actionButtonPressed: {
     transform: [{ scale: 0.98 }],
@@ -1057,8 +1069,7 @@ const styles = StyleSheet.create({
   checkInButtonText: {
     color: "#FFFFFF",
     fontWeight: "700",
-    fontSize: 14,
-    letterSpacing: 0.2,
+    letterSpacing: 0.15,
   },
   checkOutButton: {
     backgroundColor: Colors.dark.success,
@@ -1077,15 +1088,14 @@ const styles = StyleSheet.create({
   checkOutButtonText: {
     color: "#FFFFFF",
     fontWeight: "700",
-    fontSize: 14,
-    letterSpacing: 0.2,
+    letterSpacing: 0.15,
   },
   timeInfo: {
     flexDirection: "row",
     alignItems: "center",
-    marginTop: Spacing.xs,
-    paddingTop: Spacing.xs,
-    gap: Spacing.xs,
+    marginTop: 2,
+    paddingTop: 2,
+    gap: 4,
   },
 });
 

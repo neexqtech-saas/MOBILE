@@ -2,6 +2,8 @@
 import { Platform } from 'react-native';
 import Constants from 'expo-constants';
 
+import { countryNameFromIsoCode } from "@/utils/punchLocationTime";
+
 const getBackendUrl = (): string => {
   // Sab jagah sirf EXPO_PUBLIC_BACKEND_URL - dev + production dono
   const envUrl = process.env.EXPO_PUBLIC_BACKEND_URL || 'http://127.0.0.1:8000';
@@ -10,9 +12,20 @@ const getBackendUrl = (): string => {
     return envUrl; // Production bhi .env se
   }
 
+  // Agar URL mein already IP address hai (localhost/127.0.0.1 nahi), to use as-is
+  // Yeh physical devices ke liye hai jahan user ne apna local IP set kiya hai
+  const hasIpAddress = /https?:\/\/(\d{1,3}\.){3}\d{1,3}/.test(envUrl);
+  if (hasIpAddress && !envUrl.includes('127.0.0.1') && !envUrl.includes('localhost')) {
+    console.log('🔗 Backend URL (Physical device - custom IP):', envUrl);
+    return envUrl;
+  }
+
   if (Platform.OS === 'android') {
+    // Sirf localhost/127.0.0.1 ko replace karo (emulator ke liye)
+    // Physical device ke liye user ko .env mein apna local IP set karna hoga
     const url = envUrl.replace(/127\.0\.0\.1|localhost/gi, '10.0.2.2');
-    console.log('🔗 Backend URL (Android emulator):', url);
+    console.log('🔗 Backend URL (Android - using 10.0.2.2 for emulator):', url);
+    console.log('💡 Note: Agar physical device use kar rahe ho, to .env mein EXPO_PUBLIC_BACKEND_URL=http://YOUR_COMPUTER_IP:8000 set karein');
     return url;
   }
 
@@ -106,6 +119,16 @@ export interface MultipleEntry {
   remarks: string | null;
   check_in_image: string | null;
   check_out_image: string | null;
+  check_in_latitude?: number | null;
+  check_in_longitude?: number | null;
+  check_out_latitude?: number | null;
+  check_out_longitude?: number | null;
+  check_in_location?: string | null;
+  check_out_location?: string | null;
+  check_in_country?: string | null;
+  check_in_country_code?: string | null;
+  check_out_country?: string | null;
+  check_out_country_code?: string | null;
 }
 
 export interface AttendanceHistoryItem {
@@ -130,6 +153,16 @@ export interface AttendanceHistoryItem {
   multiple_entries: MultipleEntry[];
   remarks: string | null;
   images?: AttendanceImage[];
+  check_in_latitude?: number | null;
+  check_in_longitude?: number | null;
+  check_out_latitude?: number | null;
+  check_out_longitude?: number | null;
+  check_in_location?: string | null;
+  check_out_location?: string | null;
+  check_in_country?: string | null;
+  check_in_country_code?: string | null;
+  check_out_country?: string | null;
+  check_out_country_code?: string | null;
 }
 
 export interface AttendanceSummary {
@@ -147,6 +180,27 @@ export interface AttendanceResponse {
   summary?: AttendanceSummary;
   total_objects?: number;
   current_page_number?: number;
+}
+
+/** Sent with attendance punch — lat/lng in body + country + human-readable location text for DB */
+export type PunchCountryMeta = {
+  country?: string | null;
+  countryCode?: string | null;
+  /** Saved as check_in_location / check_out_location (reverse-geocoded or GPS fallback) */
+  location?: string | null;
+};
+
+/** Server reverse-geocode (Nominatim via backend) — fills country when device geocode fails */
+export interface ReverseGeocodeData {
+  country?: string | null;
+  country_code?: string | null;
+  display_name?: string | null;
+}
+
+export interface ReverseGeocodeResponse {
+  status: number;
+  message: string;
+  data?: ReverseGeocodeData | null;
 }
 
 export interface CheckInOutEntry {
@@ -250,6 +304,28 @@ export interface MonthlyAttendanceResponse {
   };
 }
 
+export interface NotificationHistoryItem {
+  id: string;
+  user: string;
+  title: string;
+  body: string;
+  notification_type: string | null;
+  data: any;
+  is_read: boolean;
+  created_at: string;
+}
+
+export interface NotificationHistoryResponse {
+  count: number;
+  total_pages: number;
+  current_page_number: number;
+  page_size: number;
+  total_objects: number;
+  results: NotificationHistoryItem[];
+  next: string | null;
+  previous: string | null;
+}
+
 class ApiService {
   private baseURL: string;
   private getAccessToken: (() => Promise<string | null>) | null = null;
@@ -269,7 +345,7 @@ class ApiService {
     requireAuth: boolean = false
   ): Promise<T> {
     const url = `${this.baseURL}${endpoint}`;
-    
+
     const headers: Record<string, string> = {
       'Content-Type': 'application/json',
       ...(options.headers as Record<string, string> || {}),
@@ -282,7 +358,7 @@ class ApiService {
         headers['Authorization'] = `Bearer ${token}`;
       }
     }
-    
+
     const config: RequestInit = {
       ...options,
       headers,
@@ -292,7 +368,7 @@ class ApiService {
       // Extract API endpoint name for better logging
       const endpointName = endpoint.split('?')[0].split('/').pop() || endpoint.split('/').slice(-2).join('/');
       const apiName = endpoint.split('/')[2] || 'unknown'; // e.g., 'login', 'session-info', 'attendance-check'
-      
+
       console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
       console.log('📡 API CALL STARTED');
       console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
@@ -303,8 +379,8 @@ class ApiService {
       console.log('🔐 Requires Auth:', requireAuth ? '✅ Yes' : '❌ No');
       console.log('📦 Headers:', Object.keys(config.headers || {}));
       if (config.body) {
-        const bodyPreview = typeof config.body === 'string' 
-          ? JSON.parse(config.body) 
+        const bodyPreview = typeof config.body === 'string'
+          ? JSON.parse(config.body)
           : config.body;
         console.log('📝 Request Body:', {
           ...bodyPreview,
@@ -312,16 +388,16 @@ class ApiService {
         });
       }
       console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-      
+
       const response = await fetch(url, config);
-      
+
       console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
       console.log('📥 API RESPONSE RECEIVED');
       console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
       console.log('🔗 Endpoint:', endpoint);
       console.log('📌 API Name:', apiName);
       console.log('✅ Status:', response.status, response.statusText);
-      
+
       // Handle non-JSON responses
       let data;
       const contentType = response.headers.get('content-type');
@@ -343,12 +419,12 @@ class ApiService {
         // Backend returns error in different formats:
         // { error: "message" } or { detail: "message" } or { message: "message", data: {...} }
         const errorMessage = data.message || data.error || data.detail || `HTTP ${response.status}: ${response.statusText}`;
-        
+
         // Include full error data in error object for better handling
         const errorWithData = new Error(errorMessage);
         (errorWithData as any).responseData = data;
         (errorWithData as any).status = response.status;
-        
+
         console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
         console.error('❌ API CALL FAILED');
         console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
@@ -372,23 +448,23 @@ class ApiService {
     } catch (error) {
       const endpointName = endpoint.split('?')[0].split('/').pop() || endpoint.split('/').slice(-2).join('/');
       const apiName = endpoint.split('/')[2] || 'unknown';
-      
+
       console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
       console.error('❌ API CALL ERROR');
       console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
       console.error('🔗 Endpoint:', endpoint);
       console.error('📌 API Name:', apiName);
-      
+
       if (error instanceof Error) {
         // Enhanced error message for network issues
-        const isNetworkError = 
-          error.message.includes('Network request failed') || 
+        const isNetworkError =
+          error.message.includes('Network request failed') ||
           error.message.includes('fetch') ||
           error.message.includes('Failed to fetch') ||
           error.message.includes('NetworkError') ||
           error.message.includes('ERR_INTERNET_DISCONNECTED') ||
           error.message.includes('ERR_NETWORK_CHANGED');
-          
+
         if (isNetworkError) {
           console.error('❌ Error Type: Network Error');
           console.error('❌ Error Message:', error.message);
@@ -401,7 +477,7 @@ class ApiService {
           console.error('   6. Current API URL:', url);
           console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
           console.log('');
-          
+
           const detailedError = `Network Error: Cannot connect to server at ${BACKEND_URL}\n\nPlease check:\n1. Backend server is running (python manage.py runserver 0.0.0.0:8000)\n2. For physical devices: Ensure device and computer are on same network\n3. Firewall allows port 8000\n4. .env mein EXPO_PUBLIC_BACKEND_URL sahi set hai?`;
           throw new Error(detailedError);
         }
@@ -434,7 +510,7 @@ class ApiService {
     const response = await this.request<SessionInfoResponse>('/api/session-info', {
       method: 'GET',
     }, true); // Require authentication
-    
+
     console.log('🔍 getSessionInfo response:', {
       success: response.success,
       status: response.status,
@@ -446,18 +522,25 @@ class ApiService {
       user_id: response.data?.user_id,
       fullData: response.data
     });
-    
+
     return response;
+  }
+
+  /** GET lat,lng → country + display_name (authenticated; server calls Nominatim). */
+  async reverseGeocode(lat: number, lng: number): Promise<ReverseGeocodeResponse> {
+    const q = `lat=${encodeURIComponent(String(lat))}&lng=${encodeURIComponent(String(lng))}`;
+    return this.request<ReverseGeocodeResponse>(`/api/reverse-geocode/?${q}`, { method: "GET" }, true);
   }
 
   // Attendance APIs
   async checkInOut(
-    userId: string, 
+    userId: string,
     base64Images?: string[],
     latitude?: number,
     longitude?: number,
     isCheckIn: boolean = true,
-    projectId?: number
+    projectId?: number,
+    countryMeta?: PunchCountryMeta | null
   ): Promise<AttendanceCheckResponse> {
     const body: any = {
       marked_by: "mobile"
@@ -465,17 +548,52 @@ class ApiService {
     if (base64Images && base64Images.length > 0) {
       body.base64_images = base64Images;
     }
+
+    let merged: PunchCountryMeta | null = countryMeta ? { ...countryMeta } : null;
+    let roundedLat: number | undefined;
+    let roundedLng: number | undefined;
+
     if (latitude !== undefined && latitude !== null && longitude !== undefined && longitude !== null) {
       // Round to 6 decimal places to match API validation
-      const roundedLat = parseFloat(latitude.toFixed(6));
-      const roundedLng = parseFloat(longitude.toFixed(6));
-      
+      roundedLat = parseFloat(latitude.toFixed(6));
+      roundedLng = parseFloat(longitude.toFixed(6));
+
       if (isCheckIn) {
         body.check_in_latitude = roundedLat;
         body.check_in_longitude = roundedLng;
       } else {
         body.check_out_latitude = roundedLat;
         body.check_out_longitude = roundedLng;
+      }
+
+      const hasCountry = !!(merged?.country?.trim() || merged?.countryCode?.trim());
+      if (!hasCountry) {
+        try {
+          const rg = await this.reverseGeocode(roundedLat, roundedLng);
+          const d = rg.data;
+          if (d && (d.country || d.country_code || d.display_name?.trim())) {
+            const codeRaw = d.country_code;
+            const code =
+              typeof codeRaw === "string" && codeRaw.trim()
+                ? String(codeRaw).toUpperCase().slice(0, 3)
+                : undefined;
+            const nameRaw = d.country;
+            const nameFromApi =
+              typeof nameRaw === "string" && nameRaw.trim() ? String(nameRaw).trim().slice(0, 120) : undefined;
+            const resolvedName =
+              nameFromApi || (code ? countryNameFromIsoCode(code)?.slice(0, 120) : undefined);
+            merged = {
+              ...(merged ?? {}),
+              country: merged?.country?.trim() || resolvedName || undefined,
+              countryCode: merged?.countryCode?.trim() || code || undefined,
+              location:
+                merged?.location?.trim() ||
+                (d.display_name?.trim() ? d.display_name.trim().slice(0, 4000) : undefined),
+            };
+          }
+        } catch (e) {
+          console.warn("reverseGeocode (checkInOut) failed:", e);
+        }
       }
     }
     // Include project_id if available (only if assigned project exists)
@@ -487,23 +605,61 @@ class ApiService {
       isNull: projectId === null,
       willInclude: projectId !== undefined && projectId !== null
     });
-    
+
     if (projectId !== undefined && projectId !== null) {
       body.project = projectId;
       console.log('✅ Including project_id in attendance payload:', projectId);
     } else {
       console.log('❌ No project_id available - skipping project field in payload. projectId:', projectId);
     }
-    
+
+    if (merged && (merged.country || merged.countryCode || merged.location?.trim())) {
+      const rawCode = merged.countryCode?.trim();
+      const code = rawCode ? String(rawCode).toUpperCase().slice(0, 3) : undefined;
+      const explicitName = merged.country?.trim();
+      const resolvedCountryName =
+        (explicitName && String(explicitName).slice(0, 120)) ||
+        (code ? countryNameFromIsoCode(code)?.slice(0, 120) : undefined) ||
+        undefined;
+
+      if (isCheckIn) {
+        if (resolvedCountryName) {
+          body.check_in_country = resolvedCountryName;
+        } else if (code) {
+          body.check_in_country = code;
+        }
+        if (code) {
+          body.check_in_country_code = code;
+        }
+        if (merged.location?.trim()) {
+          body.check_in_location = String(merged.location).trim().slice(0, 4000);
+        }
+      } else {
+        if (resolvedCountryName) {
+          body.check_out_country = resolvedCountryName;
+        } else if (code) {
+          body.check_out_country = code;
+        }
+        if (code) {
+          body.check_out_country_code = code;
+        }
+        if (merged.location?.trim()) {
+          body.check_out_location = String(merged.location).trim().slice(0, 4000);
+        }
+      }
+    }
+
     console.log('📤 Attendance check-in/out payload:', {
       userId,
       isCheckIn,
       hasProject: !!body.project,
       projectId: body.project,
       hasImages: !!body.base64_images,
-      hasLocation: !!(body.check_in_latitude || body.check_out_latitude)
+      hasLocation: !!(body.check_in_latitude || body.check_out_latitude),
+      hasLocationText: !!(body.check_in_location || body.check_out_location),
+      hasCountry: !!(body.check_in_country || body.check_out_country || body.check_in_country_code || body.check_out_country_code),
     });
-    
+
     return this.request<AttendanceCheckResponse>(
       `/api/attendance-check/${userId}`,
       {
@@ -522,10 +678,10 @@ class ApiService {
   ): Promise<AttendanceHistoryResponse> {
     let url = `/api/employee-history/${orgId}/${employeeId}`;
     const params = new URLSearchParams();
-    
+
     if (fromDate) params.append('from_date', fromDate);
     if (toDate) params.append('to_date', toDate);
-    
+
     if (params.toString()) {
       url += `?${params.toString()}`;
     }
@@ -540,7 +696,7 @@ class ApiService {
   async getTodayAttendance(userId: string, adminId?: string): Promise<AttendanceHistoryItem | null> {
     try {
       const today = new Date().toISOString().split('T')[0];
-      
+
       // Use employee-attendance endpoint if adminId is available
       if (adminId) {
         const url = `/api/employee-attendance/${adminId}?date=${today}`;
@@ -549,7 +705,7 @@ class ApiService {
           { method: 'GET' },
           true
         );
-        
+
         if (response.data && response.data.length > 0) {
           // Find the attendance record for this user
           const userAttendance = response.data.find(item => item.user_id === userId);
@@ -557,7 +713,7 @@ class ApiService {
         }
         return null;
       }
-      
+
       // Fallback to employee-history if orgId is available
       // This would require orgId which we might not have
       return null;
@@ -633,7 +789,7 @@ class ApiService {
       { method: 'GET' },
       true
     );
-    
+
     // Backend returns array directly (from Django REST framework)
     if (Array.isArray(response)) {
       return { data: response };
@@ -650,7 +806,7 @@ class ApiService {
       { method: 'GET' },
       true
     );
-    
+
     // Backend returns array directly or wrapped
     if (Array.isArray(response)) {
       return { data: response };
@@ -669,7 +825,7 @@ class ApiService {
       { method: 'GET' },
       true
     );
-    
+
     // Backend returns array directly or wrapped
     if (Array.isArray(response)) {
       return { data: response };
@@ -695,7 +851,7 @@ class ApiService {
       reason: reason,
       leave_day_type: leaveDayType,
     };
-    
+
     return this.request<LeaveApplicationAPIResponse>(
       url,
       {
@@ -727,14 +883,27 @@ class ApiService {
   async getMyTasks(
     siteId: string,
     userId: string,
+    fromDate?: string,
+    toDate?: string,
     status?: 'pending' | 'in-progress' | 'completed'
   ): Promise<TaskListAPIResponse> {
     let url = `/api/task/employee/my-tasks/${siteId}/${userId}`;
+    
+    // Add parameters if provided
+    const params = new URLSearchParams();
+    if (fromDate) params.append('from_date', fromDate);
+    if (toDate) params.append('to_date', toDate);
     if (status) {
       // Convert app format (in-progress) to API format (in_progress)
       const apiStatus = status === 'in-progress' ? 'in_progress' : status;
-      url += `?status=${apiStatus}`;
+      params.append('status', apiStatus);
     }
+    
+    if (params.toString()) {
+      url += `?${params.toString()}`;
+    }
+
+    console.log('🔍 Fetching tasks for userId:', userId, { fromDate, toDate, status });
     return this.request<TaskListAPIResponse>(
       url,
       { method: 'GET' },
@@ -1298,12 +1467,12 @@ class ApiService {
   ): Promise<{ status: number; message: string; data?: { profile_photo?: string; is_photo_updated?: boolean } }> {
     const url = `/api/employee/profile-photo-upload/${userId}`;
     console.log('📤 Uploading profile photo for userId:', userId);
-    
+
     // Backend expects base64_image field (not profile_photo)
     const body = {
       base64_image: base64Image,
     };
-    
+
     const response = await this.request<{ status: number; message: string; data?: { profile_photo?: string; is_photo_updated?: boolean } }>(
       url,
       {
@@ -1323,11 +1492,11 @@ class ApiService {
   ): Promise<{ status: number; message: string; data?: { user_id: string; fcm_token: string } }> {
     const url = `/api/fcm-token/${userId}`;
     console.log('📱 Updating FCM token for userId:', userId);
-    
+
     const body = {
       fcm_token: fcmToken,
     };
-    
+
     const response = await this.request<{ status: number; message: string; data?: { user_id: string; fcm_token: string } }>(
       url,
       {
@@ -1338,6 +1507,39 @@ class ApiService {
     );
     console.log('📱 FCM token update response:', response);
     return response;
+  }
+
+  // ==================== NOTIFICATION APIs ====================
+
+  async getNotificationHistory(
+    params?: {
+      page?: number;
+      type?: string;
+      is_read?: boolean;
+    }
+  ): Promise<NotificationHistoryResponse> {
+    let url = '/api/notifications/history';
+    const queryParams = new URLSearchParams();
+    if (params?.page) queryParams.append('page', params.page.toString());
+    if (params?.type) queryParams.append('type', params.type);
+    if (params?.is_read !== undefined) queryParams.append('is_read', params.is_read.toString());
+
+    if (queryParams.toString()) {
+      url += `?${queryParams.toString()}`;
+    }
+
+    console.log('🔔 Fetching notification history:', url);
+    return this.request<NotificationHistoryResponse>(url, { method: 'GET' }, true);
+  }
+
+  async markNotificationAsRead(id?: string): Promise<{ status: number; message: string }> {
+    const url = id ? `/api/notifications/history/${id}` : '/api/notifications/history';
+    console.log('🔔 Marking notification as read:', id || 'all');
+    return this.request<{ status: number; message: string }>(
+      url,
+      { method: 'PUT' },
+      true
+    );
   }
 
   // ==================== EXPENSE APIs ====================
@@ -1398,10 +1600,22 @@ class ApiService {
   // Get Expenses List
   async getExpenses(
     siteId: string,
-    userId: string
+    userId: string,
+    fromDate?: string,
+    toDate?: string
   ): Promise<{ status: number; message: string; data?: ExpenseAPI[] }> {
-    const url = `/api/expenses/${siteId}/${userId}/`;
-    console.log('🔍 Fetching expenses for userId:', userId);
+    let url = `/api/expenses/${siteId}/${userId}/`;
+    
+    // Add date parameters if provided
+    const params = new URLSearchParams();
+    if (fromDate) params.append('date_from', fromDate);
+    if (toDate) params.append('date_to', toDate);
+    
+    if (params.toString()) {
+      url += `?${params.toString()}`;
+    }
+
+    console.log('🔍 Fetching expenses for userId:', userId, { fromDate, toDate });
     const response = await this.request<{ status: number; message: string; data?: ExpenseAPI[] }>(
       url,
       { method: 'GET' },
@@ -1416,10 +1630,22 @@ class ApiService {
   // Get Visits List
   async getVisits(
     siteId: string,
-    userId: string
+    userId: string,
+    fromDate?: string,
+    toDate?: string
   ): Promise<{ status: number; message: string; data?: VisitListResponse }> {
-    const url = `/api/visit/visit-list-create-by-user/${siteId}/${userId}/`;
-    console.log('🔍 Fetching visits for userId:', userId);
+    let url = `/api/visit/visit-list-create-by-user/${siteId}/${userId}/`;
+    
+    // Add date parameters if provided
+    const params = new URLSearchParams();
+    if (fromDate) params.append('from_date', fromDate);
+    if (toDate) params.append('to_date', toDate);
+    
+    if (params.toString()) {
+      url += `?${params.toString()}`;
+    }
+
+    console.log('🔍 Fetching visits for userId:', userId, { fromDate, toDate });
     const response = await this.request<{ status: number; message: string; data?: VisitListResponse }>(
       url,
       { method: 'GET' },

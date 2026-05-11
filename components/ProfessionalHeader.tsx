@@ -12,12 +12,15 @@ import { useTheme } from "@/hooks/useTheme";
 interface ProfessionalHeaderProps {
   title?: string;
   showBackButton?: boolean;
+  /** When set, back is always shown (with showBackButton) and this runs instead of default goBack */
+  onBackPress?: () => void;
   rightComponent?: React.ReactNode;
 }
 
 export function ProfessionalHeader({ 
   title, 
   showBackButton = true,
+  onBackPress,
   rightComponent 
 }: ProfessionalHeaderProps) {
   const navigation = useNavigation();
@@ -27,6 +30,7 @@ export function ProfessionalHeader({
   
   // Check if we can go back
   const canGoBack = navigation.canGoBack();
+  const showBack = showBackButton && (onBackPress != null || canGoBack);
   
   // Get title from route params or use provided title
   const displayTitle = title || route.name;
@@ -34,6 +38,10 @@ export function ProfessionalHeader({
   const handleBackPress = () => {
     if (Platform.OS !== 'web') {
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    }
+    if (onBackPress) {
+      onBackPress();
+      return;
     }
     if (canGoBack) {
       navigation.goBack();
@@ -54,7 +62,7 @@ export function ProfessionalHeader({
       <View style={styles.content}>
         {/* Left Section - Back Button */}
         <View style={styles.leftSection}>
-          {showBackButton && canGoBack && (
+          {showBack && (
             <Pressable
               onPress={handleBackPress}
               style={({ pressed }) => [

@@ -14,6 +14,7 @@ import { ProductionStackParamList } from "@/navigation/ProductionStackNavigator"
 import Spacer from "@/components/Spacer";
 import { RefreshButton } from "@/components/RefreshButton";
 import { apiService, MaterialRequisitionAPI } from "@/services/api";
+import { getCurrentMonthDates } from "@/utils/dateHelpers";
 
 type MaterialRequisitionsScreenNavigationProp = NativeStackNavigationProp<
   ProductionStackParamList,
@@ -52,9 +53,14 @@ export default function MaterialRequisitionsScreen() {
 
     setIsLoading(true);
     try {
+      const { from, to } = getCurrentMonthDates();
       const response = await apiService.getMyMaterialRequisitions(
         employee.adminId,
-        employee.id
+        employee.id,
+        {
+          date_from: from,
+          date_to: to
+        }
       );
       if (response.status === 200 && response.data) {
         setRequisitions(response.data);
@@ -156,6 +162,14 @@ export default function MaterialRequisitionsScreen() {
             </Pressable>
           ))}
         </View>
+
+        {/* Date Range Label */}
+        <View style={{ paddingHorizontal: Spacing.lg, marginBottom: Spacing.xs, marginTop: Spacing.sm }}>
+          <ThemedText type="small" style={{ color: theme.textMuted, fontSize: 12, fontWeight: '500' }}>
+            Showing requisitions for this month
+          </ThemedText>
+        </View>
+
         <Spacer height={Spacing.lg} />
 
         {/* Requisitions List */}
