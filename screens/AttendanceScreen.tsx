@@ -60,6 +60,32 @@ const formatDate = (dateStr: string): string => {
   }
 };
 
+const getThreeSColors = (workType?: string | null) => {
+  if (workType === "subsidy") {
+    return { bg: "#F5F3FF", border: "#7C3AED", text: "#6D28D9", dot: "#7C3AED" };
+  }
+  if (workType === "piece_rate") {
+    return { bg: "#EFF6FF", border: "#2563EB", text: "#1D4ED8", dot: "#2563EB" };
+  }
+  return null;
+};
+
+const normalizeDateKey = (dateStr: string): string =>
+  dateStr?.includes("T") ? dateStr.split("T")[0] : dateStr;
+
+const getThreeSWorkTypeForDate = (
+  dateStr: string,
+  threeSByDate: Record<string, string>,
+  history: { date: string; threeSWorkType?: string | null }[],
+  today?: { date: string; threeSWorkType?: string | null } | null
+): string | null => {
+  const key = normalizeDateKey(dateStr);
+  if (threeSByDate[key]) return threeSByDate[key];
+  if (today?.date === key && today.threeSWorkType) return today.threeSWorkType;
+  const record = history.find((r) => normalizeDateKey(r.date) === key);
+  return record?.threeSWorkType ?? null;
+};
+
 const getStatusColor = (status: string): string => {
   switch (status?.toLowerCase()) {
     case 'present':
@@ -124,7 +150,8 @@ export default function AttendanceScreen() {
   const [monthlyAttendance, setMonthlyAttendance] = useState<{
     present: string[];
     absent: string[];
-  }>({ present: [], absent: [] });
+    threeSByDate: Record<string, string>;
+  }>({ present: [], absent: [], threeSByDate: {} });
   const [selectedDateDetails, setSelectedDateDetails] = useState<any>(null);
 
   // Get today's date in YYYY-MM-DD format
@@ -138,18 +165,17 @@ export default function AttendanceScreen() {
 
   // Fetch monthly attendance for calendar color coding
   const fetchMonthlyAttendance = async () => {
-    // Use siteId for monthly attendance API (backend expects site_id)
-    const siteId = employee?.siteId;
-    if (!siteId || !employee?.id) {
-      console.log('⚠️ Cannot fetch monthly attendance: missing siteId or userId');
+    const adminId = employee?.adminId;
+    if (!adminId || !employee?.id) {
+      console.log('⚠️ Cannot fetch monthly attendance: missing adminId or userId');
       return;
     }
     
     try {
       const month = calendarMonth.getMonth() + 1;
       const year = calendarMonth.getFullYear();
-      console.log('📅 Fetching monthly attendance:', { siteId, userId: employee.id, month, year });
-      const response = await apiService.getMonthlyAttendance(siteId, employee.id, month, year);
+      console.log('📅 Fetching monthly attendance:', { adminId, userId: employee.id, month, year });
+      const response = await apiService.getMonthlyAttendance(adminId, employee.id, month, year);
       
       console.log('📅 Monthly attendance response:', {
         hasData: !!response.data,
@@ -163,6 +189,7 @@ export default function AttendanceScreen() {
         setMonthlyAttendance({
           present: response.data.present?.dates || [],
           absent: response.data.absent?.dates || [],
+          threeSByDate: response.data.three_s_by_date || {},
         });
       }
     } catch (error: any) {
@@ -177,10 +204,10 @@ export default function AttendanceScreen() {
 
   // Fetch selected date details
   const fetchDateDetails = async (date: string) => {
-    if (!employee?.siteId || !employee?.id) return;
+    if (!employee?.adminId || !employee?.id) return;
     
     try {
-      const response = await apiService.getUserAttendanceByDate(employee.siteId, employee.id, date);
+      const response = await apiService.getUserAttendanceByDate(employee.adminId, employee.id, date);
       if (response.data && response.data.length > 0) {
         setSelectedDateDetails(response.data[0]);
       } else {
@@ -204,17 +231,17 @@ export default function AttendanceScreen() {
   }, [employee?.organizationId, employee?.id, fetchAttendanceHistory, fetchTodayAttendance]);
 
   useEffect(() => {
-    const siteId = employee?.siteId;
-    if (siteId && employee?.id) {
+    const adminId = employee?.adminId;
+    if (adminId && employee?.id) {
       fetchMonthlyAttendance();
     }
-  }, [calendarMonth, employee?.siteId, employee?.id]);
+  }, [calendarMonth, employee?.adminId, employee?.id]);
 
   useEffect(() => {
     if (selectedDate) {
       fetchDateDetails(selectedDate);
     }
-  }, [selectedDate, employee?.siteId, employee?.id]);
+  }, [selectedDate, employee?.adminId, employee?.id]);
 
   const handleRefresh = async () => {
     if (!employee?.organizationId || !employee?.id) {
@@ -307,6 +334,13 @@ export default function AttendanceScreen() {
     const isSelected = selectedDate === dateStr;
     const isToday = dateStr === getTodayDate();
     const dateStatus = getDateStatus(dateStr);
+    const threeSWorkType = getThreeSWorkTypeForDate(
+      dateStr,
+      monthlyAttendance.threeSByDate,
+      attendanceHistory,
+      todayAttendance
+    );
+    const threeSColors = getThreeSColors(threeSWorkType);
     const isPast = new Date(dateStr) < new Date(getTodayDate());
     const isFuture = new Date(dateStr) > new Date(getTodayDate());
     
@@ -319,6 +353,11 @@ export default function AttendanceScreen() {
       backgroundColor = Colors.dark.primary;
       borderColor = Colors.dark.primary;
       textColor = "#FFFFFF";
+      borderWidth = 1.5;
+    } else if (dateStatus === 'present' && threeSColors) {
+      backgroundColor = threeSColors.bg;
+      borderColor = threeSColors.border;
+      textColor = threeSColors.text;
       borderWidth = 1.5;
     } else if (dateStatus === 'present') {
       backgroundColor = "#ECFDF5"; // Very light green
@@ -383,7 +422,12 @@ export default function AttendanceScreen() {
         {(dateStatus === 'present' || dateStatus === 'absent') && !isSelected && !isFuture && (
           <View style={[
             styles.statusIndicator,
-            { backgroundColor: dateStatus === 'present' ? "#10B981" : "#EF4444" }
+            {
+              backgroundColor:
+                dateStatus === 'present'
+                  ? (threeSColors?.dot ?? "#10B981")
+                  : "#EF4444",
+            },
           ]} />
         )}
       </Pressable>
@@ -479,6 +523,14 @@ export default function AttendanceScreen() {
           <View style={styles.legendItem}>
             <View style={[styles.legendColor, { backgroundColor: "#FEE2E2", borderColor: "#F44336" }]} />
             <ThemedText type="small" style={styles.legendText}>Absent</ThemedText>
+          </View>
+          <View style={styles.legendItem}>
+            <View style={[styles.legendColor, { backgroundColor: "#EFF6FF", borderColor: "#2563EB" }]} />
+            <ThemedText type="small" style={styles.legendText}>Piece Rate</ThemedText>
+          </View>
+          <View style={styles.legendItem}>
+            <View style={[styles.legendColor, { backgroundColor: "#F5F3FF", borderColor: "#7C3AED" }]} />
+            <ThemedText type="small" style={styles.legendText}>Subsidy</ThemedText>
           </View>
           <View style={styles.legendItem}>
             <View style={[styles.legendColor, { backgroundColor: Colors.dark.primary, borderColor: Colors.dark.primary }]} />
@@ -716,6 +768,43 @@ export default function AttendanceScreen() {
                       </ThemedText>
                     </View>
                   </View>
+                  {selectedDateDetails.three_s_work_type ? (
+                    <>
+                      <Spacer height={Spacing.sm} />
+                      <View
+                        style={{
+                          alignSelf: "flex-start",
+                          paddingVertical: 6,
+                          paddingHorizontal: Spacing.md,
+                          borderRadius: BorderRadius.md,
+                          backgroundColor:
+                            selectedDateDetails.three_s_work_type === "subsidy"
+                              ? "#F5F3FF"
+                              : "#EFF6FF",
+                          borderWidth: 1,
+                          borderColor:
+                            selectedDateDetails.three_s_work_type === "subsidy"
+                              ? "#7C3AED"
+                              : "#2563EB",
+                        }}
+                      >
+                        <ThemedText
+                          style={{
+                            fontWeight: "700",
+                            fontSize: detailLabelFontSize + 2,
+                            color:
+                              selectedDateDetails.three_s_work_type === "subsidy"
+                                ? "#6D28D9"
+                                : "#1D4ED8",
+                          }}
+                        >
+                          Work type:{" "}
+                          {selectedDateDetails.three_s_work_type_display ||
+                            selectedDateDetails.three_s_work_type}
+                        </ThemedText>
+                      </View>
+                    </>
+                  ) : null}
                   {selectedDateDetails.production_hours != null &&
                     selectedDateDetails.production_hours !== "" && (
                     <>

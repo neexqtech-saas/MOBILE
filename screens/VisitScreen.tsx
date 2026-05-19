@@ -70,10 +70,10 @@ export default function VisitScreen() {
   const [checkingOut, setCheckingOut] = useState<number | null>(null);
 
   const fetchVisits = async () => {
-    const siteId = employee.siteId;
+    const adminId = employee.adminId;
     const userId = employee.id;
 
-    if (!siteId || !userId) {
+    if (!adminId || !userId) {
       const errorMsg = "Unable to load visits. Please login again.";
       setError(errorMsg);
       Alert.alert("Error", errorMsg, [{ text: "OK" }]);
@@ -86,7 +86,7 @@ export default function VisitScreen() {
     setError(null);
     try {
       const { from, to } = getCurrentMonthDates();
-      const response = await apiService.getVisits(siteId, userId, from, to);
+      const response = await apiService.getVisits(adminId, userId, from, to);
       if (response.status === 200 && response.data) {
         // Handle both paginated response (with results) and direct array response
         const visitsList = Array.isArray(response.data) 
@@ -142,7 +142,7 @@ export default function VisitScreen() {
   useFocusEffect(
     useCallback(() => {
       fetchVisits();
-    }, [employee.siteId, employee.id])
+    }, [employee.adminId, employee.id])
   );
 
   const formatDate = (dateStr: string) => {
@@ -183,10 +183,10 @@ export default function VisitScreen() {
   });
 
   const handleCheckIn = async (visitId: number) => {
-    const siteId = employee.siteId;
+    const adminId = employee.adminId;
     const userId = employee.id;
 
-    if (!siteId || !userId) {
+    if (!adminId || !userId) {
       Alert.alert("Error", "User information not found. Please login again.");
       return;
     }
@@ -210,7 +210,7 @@ export default function VisitScreen() {
       const latitude = parseFloat(location.coords.latitude.toFixed(6));
       const longitude = parseFloat(location.coords.longitude.toFixed(6));
       
-      const response = await apiService.visitCheckIn(siteId, userId, visitId, {
+      const response = await apiService.visitCheckIn(adminId, userId, visitId, {
         latitude: latitude,
         longitude: longitude,
         note: "Visit check-in",
@@ -247,10 +247,10 @@ export default function VisitScreen() {
   };
 
   const handleCheckOut = async (visitId: number) => {
-    const siteId = employee.siteId;
+    const adminId = employee.adminId;
     const userId = employee.id;
 
-    if (!siteId || !userId) {
+    if (!adminId || !userId) {
       Alert.alert("Error", "User information not found. Please login again.");
       return;
     }
@@ -274,7 +274,7 @@ export default function VisitScreen() {
       const latitude = parseFloat(location.coords.latitude.toFixed(6));
       const longitude = parseFloat(location.coords.longitude.toFixed(6));
       
-      const response = await apiService.visitCheckOut(siteId, userId, visitId, {
+      const response = await apiService.visitCheckOut(adminId, userId, visitId, {
         latitude: latitude,
         longitude: longitude,
         note: "Visit check-out",

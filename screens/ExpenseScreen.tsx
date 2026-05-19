@@ -66,10 +66,10 @@ export default function ExpenseScreen() {
   const [error, setError] = useState<string | null>(null);
 
   const fetchExpenses = async () => {
-    const siteId = employee.siteId;
+    const adminId = employee.adminId;
     const userId = employee.id;
 
-    if (!siteId || !userId) {
+    if (!adminId || !userId) {
       const errorMsg = "Unable to load expenses. Please login again.";
       setError(errorMsg);
       Alert.alert("Error", errorMsg, [{ text: "OK" }]);
@@ -82,7 +82,7 @@ export default function ExpenseScreen() {
     setError(null);
     try {
       const { from, to } = getCurrentMonthDates();
-      const response = await apiService.getExpenses(siteId, userId, from, to);
+      const response = await apiService.getExpenses(adminId, userId, from, to);
       if (response.status === 200 && response.data) {
         setExpenses(response.data);
         setError(null);
@@ -134,7 +134,7 @@ export default function ExpenseScreen() {
   useFocusEffect(
     useCallback(() => {
       fetchExpenses();
-    }, [employee.siteId, employee.id])
+    }, [employee.adminId, employee.id])
   );
 
   const formatCurrency = (amount: string | number) => {

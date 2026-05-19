@@ -99,10 +99,10 @@ export default function TaskDetailScreen() {
     if (updateResult.success) {
       // Task status is already updated in store from PUT API response
       // Now call GET API with status="in-progress" to verify and refresh
-      if (employee.siteId && employee.id) {
+      if (employee.adminId && employee.id) {
         try {
           // Call GET API with status="in-progress" to fetch and verify the task
-          const response = await apiService.getMyTasks(employee.siteId, employee.id, "in-progress");
+          const response = await apiService.getMyTasks(employee.adminId, employee.id, "in-progress");
           
           if (response.data && response.data.length > 0) {
             // Find the updated task in the response

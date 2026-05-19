@@ -160,17 +160,17 @@ export default function ApplyLeaveScreen() {
     setError("");
 
     try {
-      const siteId = employee.siteId;
+      const adminId = employee.adminId;
       const userId = employee.id;
 
-      if (!siteId || !userId) {
-        setError("User ID or Site ID not found. Please login again.");
+      if (!adminId || !userId) {
+        setError("User ID or admin context not found. Please login again.");
         setIsSubmitting(false);
         return;
       }
 
       const response = await apiService.applyLeave(
-        siteId,
+        adminId,
         userId,
         leaveTypeId,
         fromDate,

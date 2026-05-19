@@ -27,6 +27,7 @@ import { apiService, type PunchCountryMeta } from "@/services/api";
 import { getCurrentMonthDates } from "@/utils/dateHelpers";
 import { formatCountryLabel } from "@/utils/punchLocationTime";
 import { resolvePunchLocation } from "@/utils/resolvePunchLocation";
+import { ThreeSCheckInModal, type ThreeSCheckInPayload } from "@/components/ThreeSCheckInModal";
 
 type HomeScreenNavigationProp = CompositeNavigationProp<
   NativeStackNavigationProp<HomeStackParamList, "Home">,
@@ -114,6 +115,7 @@ export default function HomeScreen() {
   const [pendingTasksCount, setPendingTasksCount] = useState(0);
   const [pendingVisitsCount, setPendingVisitsCount] = useState(0);
   const [cameraPermissionStatus, setCameraPermissionStatus] = useState<string | null>(null);
+  const [showThreeSModal, setShowThreeSModal] = useState(false);
 
   const punchScale = useSharedValue(1);
 
@@ -220,15 +222,15 @@ export default function HomeScreen() {
 
   // Fetch pending counts for tasks and visits
   const fetchPendingCounts = async () => {
-    const siteId = employee.siteId;
+    const adminId = employee.adminId;
     const userId = employee.id;
 
-    if (!siteId || !userId) return;
+    if (!adminId || !userId) return;
 
     try {
       const { from, to } = getCurrentMonthDates();
       // Fetch pending tasks count for current month
-      const tasksResponse = await apiService.getMyTasks(siteId, userId, from, to);
+      const tasksResponse = await apiService.getMyTasks(adminId, userId, from, to);
       if (tasksResponse.status === 200 && tasksResponse.data) {
         const pendingTasks = tasksResponse.data.filter(
           (task: any) => task.status === 'pending' || task.status === 'in-progress' || task.status === 'in_progress'
@@ -242,7 +244,7 @@ export default function HomeScreen() {
     try {
       const { from, to } = getCurrentMonthDates();
       // Fetch pending visits count for current month
-      const visitsResponse = await apiService.getVisits(siteId, userId, from, to);
+      const visitsResponse = await apiService.getVisits(adminId, userId, from, to);
       if (visitsResponse.status === 200 && visitsResponse.data?.results) {
         const pendingVisits = visitsResponse.data.results.filter(
           (visit: any) => visit.status === 'pending' || visit.status === 'scheduled'
@@ -524,6 +526,46 @@ export default function HomeScreen() {
     });
   };
 
+  const captureCameraPhoto = async (
+    useFrontCamera: boolean
+  ): Promise<{ image: string | null; location?: { latitude: number; longitude: number } | null }> => {
+    if (Platform.OS === "web") {
+      return captureSelfieWeb();
+    }
+
+    let status = cameraPermissionStatus;
+    if (status !== "granted") {
+      const permissionResult = await ImagePicker.requestCameraPermissionsAsync();
+      status = permissionResult.status;
+      setCameraPermissionStatus(status);
+    }
+
+    if (status !== "granted") {
+      Alert.alert("Permission Required", "Camera permission is required.");
+      return { image: null };
+    }
+
+    const result = await ImagePicker.launchCameraAsync({
+      mediaTypes: ["images"],
+      allowsEditing: false,
+      aspect: [4, 3],
+      quality: 0.65,
+      base64: true,
+      cameraType: useFrontCamera ? ImagePicker.CameraType.front : ImagePicker.CameraType.back,
+      exif: false,
+    });
+
+    const location = await getCurrentLocation().catch(() => null);
+
+    if (!result.canceled && result.assets?.[0]?.base64) {
+      return {
+        image: `data:image/png;base64,${result.assets[0].base64}`,
+        location: location || undefined,
+      };
+    }
+    return { image: null };
+  };
+
   const captureSelfie = async (): Promise<{ image: string | null; location?: { latitude: number; longitude: number } | null }> => {
     try {
       // For web platform, use HTML5 getUserMedia API
@@ -779,8 +821,107 @@ export default function HomeScreen() {
     });
   };
 
+  const is3sClient = organizationSettings?.is_3s_client === true;
+
+  const resolvePunchCoords = async (
+    captureResult: { image: string | null; location?: { latitude: number; longitude: number } | null }
+  ) => {
+    let latitude = captureResult.location?.latitude;
+    let longitude = captureResult.location?.longitude;
+
+    if (!latitude || !longitude) {
+      try {
+        const location = await Promise.race([
+          getCurrentLocation(),
+          new Promise<null>((resolve) => setTimeout(() => resolve(null), 800)),
+        ]);
+        if (location) {
+          latitude = location.latitude;
+          longitude = location.longitude;
+        }
+      } catch {
+        /* optional */
+      }
+    }
+
+    const roundedLat = latitude ? parseFloat(latitude.toFixed(6)) : undefined;
+    const roundedLng = longitude ? parseFloat(longitude.toFixed(6)) : undefined;
+
+    let punchCountryMeta: PunchCountryMeta | undefined;
+    if (roundedLat != null && roundedLng != null) {
+      const resolved = await resolvePunchLocation(roundedLat, roundedLng);
+      punchCountryMeta = {
+        country: resolved.country,
+        countryCode: resolved.countryCode,
+        location: resolved.location,
+      };
+    }
+
+    return { roundedLat, roundedLng, punchCountryMeta };
+  };
+
+  const submitCheckIn = async (
+    selfieImage: string,
+    threeSData?: ThreeSCheckInPayload | null,
+    captureResult?: { location?: { latitude: number; longitude: number } | null }
+  ) => {
+    const validation = await validateFaceImage(selfieImage);
+    if (!validation.valid) {
+      setPunchError(validation.error || "Face detection failed. Please capture a clear photo of your face.");
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+      return;
+    }
+
+    const { roundedLat, roundedLng, punchCountryMeta } = await resolvePunchCoords({
+      image: selfieImage,
+      location: captureResult?.location,
+    });
+
+    const result = await checkIn(
+      [selfieImage],
+      roundedLat,
+      roundedLng,
+      punchCountryMeta,
+      threeSData
+        ? {
+            workType: threeSData.workType,
+            liftInstallationNumber: threeSData.liftInstallationNumber,
+            liftImage: threeSData.liftImage,
+            selfieImage: threeSData.selfieImage,
+          }
+        : null
+    );
+
+    if (!result.success) {
+      setPunchError(result.error || "Check-in failed. Please try again.");
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+    } else {
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      fetchAttendanceAfterPunch().catch(() => undefined);
+    }
+  };
+
+  const handleThreeSSubmit = async (payload: ThreeSCheckInPayload) => {
+    setIsPunching(true);
+    setPunchError(null);
+    try {
+      await submitCheckIn(payload.selfieImage, payload);
+    } finally {
+      setIsPunching(false);
+    }
+  };
+
   const handlePunch = async () => {
     if (isPunching) return;
+
+    const lastStatus = todayAttendance?.lastLoginStatus?.toLowerCase();
+    const shouldCheckIn = !lastStatus || lastStatus === "checkout";
+
+    if (shouldCheckIn && is3sClient) {
+      setPunchError(null);
+      setShowThreeSModal(true);
+      return;
+    }
 
     setPunchError(null); // Clear previous errors
     setIsPunching(true);
@@ -855,20 +996,7 @@ export default function HomeScreen() {
       const shouldCheckIn = !lastStatus || lastStatus === "checkout";
 
       if (shouldCheckIn) {
-        // Check In with selfie and location
-        const result = await checkIn([captureResult.image], roundedLat, roundedLng, punchCountryMeta);
-        if (!result.success) {
-          setPunchError(result.error || "Check-in failed. Please try again.");
-          Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
-        } else {
-          // Success - show immediately, fetch attendance in background (non-blocking)
-          Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-          // Fetch attendance in background without blocking UI
-          fetchAttendanceAfterPunch().catch(err => {
-            console.log('Background attendance fetch error:', err);
-            // Silently fail - user already got success feedback
-          });
-        }
+        await submitCheckIn(captureResult.image, null, captureResult);
       } else {
         // Check Out with selfie and location
         const result = await checkOut([captureResult.image], roundedLat, roundedLng, punchCountryMeta);
@@ -994,6 +1122,12 @@ export default function HomeScreen() {
     },
     { icon: "dollar-sign" as const, label: "Expenses", onPress: () => navigation.navigate("Expenses"), menuKey: "expense" },
     { icon: "map-pin" as const, label: "Visits", onPress: () => navigation.navigate("Visits"), menuKey: "visit" },
+    {
+      icon: "file-text" as const,
+      label: "COC Form",
+      onPress: () => navigation.navigate("COCComplianceForm"),
+      menuKey: "complianceCertificates",
+    },
   ];
 
   // Filter shortcuts - show by default, only hide if explicitly false
@@ -1230,6 +1364,31 @@ export default function HomeScreen() {
                 </ThemedText>
               </View>
             </View>
+
+            {todayAttendance?.threeSWorkType ? (
+              <View
+                style={[
+                  styles.threeSBadge,
+                  {
+                    backgroundColor:
+                      todayAttendance.threeSWorkType === "subsidy" ? "#F5F3FF" : "#EFF6FF",
+                    borderColor:
+                      todayAttendance.threeSWorkType === "subsidy" ? "#7C3AED" : "#2563EB",
+                  },
+                ]}
+              >
+                <ThemedText
+                  style={{
+                    fontSize: attendanceLabelFontSize + 1,
+                    fontWeight: "700",
+                    color:
+                      todayAttendance.threeSWorkType === "subsidy" ? "#6D28D9" : "#1D4ED8",
+                  }}
+                >
+                  Today: {todayAttendance.threeSWorkTypeDisplay || todayAttendance.threeSWorkType}
+                </ThemedText>
+              </View>
+            ) : null}
 
             {(lastPunchDisplay.countryLabel || lastPunchDisplay.place) && (
               <View style={styles.punchLocationBlock}>
@@ -1535,6 +1694,26 @@ export default function HomeScreen() {
 
         <Spacer height={Spacing["3xl"]} />
       </ScreenScrollView>
+
+      <ThreeSCheckInModal
+        visible={showThreeSModal}
+        onClose={() => setShowThreeSModal(false)}
+        onCaptureLiftPhoto={async () => {
+          const result = await captureCameraPhoto(false);
+          return result.image;
+        }}
+        onCaptureSelfie={async () => {
+          const result = await captureCameraPhoto(true);
+          if (!result.image) return null;
+          const validation = await validateFaceImage(result.image);
+          if (!validation.valid) {
+            setPunchError(validation.error || "Face detection failed. Please try again.");
+            return null;
+          }
+          return result.image;
+        }}
+        onSubmit={handleThreeSSubmit}
+      />
     </View>
   );
 }
@@ -1707,6 +1886,14 @@ const styles = StyleSheet.create({
     fontWeight: "700",
     marginBottom: 4,
     marginTop: 2,
+  },
+  threeSBadge: {
+    marginTop: Spacing.sm,
+    paddingVertical: 6,
+    paddingHorizontal: Spacing.md,
+    borderRadius: BorderRadius.md,
+    borderWidth: 1,
+    alignSelf: "flex-start",
   },
   punchLocationBlock: {
     marginTop: Spacing.sm,

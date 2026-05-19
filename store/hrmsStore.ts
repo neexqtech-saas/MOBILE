@@ -126,8 +126,7 @@ export interface Employee {
   ifscCode: string;
   avatar: string | null;
   organizationId?: string; // Organization ID for API calls
-  adminId?: string; // Admin ID for attendance API calls
-  siteId?: string; // Site ID from session info for attendance API calls
+  adminId?: string; // Admin UUID for scoped API paths (attendance, leaves, tasks, etc.)
   assignedProject?: AssignedProject; // First assigned project from session info
   isPhotoUpdated?: boolean; // Flag to track if profile photo has been updated
 }
@@ -166,6 +165,8 @@ export interface AttendanceRecord {
   checkInCountryCode?: string | null;
   checkOutCountry?: string | null;
   checkOutCountryCode?: string | null;
+  threeSWorkType?: "piece_rate" | "subsidy" | null;
+  threeSWorkTypeDisplay?: string | null;
 }
 
 export interface LeaveRequest {
@@ -271,7 +272,13 @@ interface HRMSState {
     base64Images?: string[],
     latitude?: number,
     longitude?: number,
-    countryMeta?: PunchCountryMeta | null
+    countryMeta?: PunchCountryMeta | null,
+    threeSData?: {
+      workType: "piece_rate" | "subsidy";
+      liftInstallationNumber: string;
+      liftImage: string;
+      selfieImage: string;
+    } | null
   ) => Promise<{ success: boolean; error?: string }>;
   checkOut: (
     base64Images?: string[],
@@ -567,7 +574,6 @@ export const useHRMSStore = create<HRMSState>((set, get) => ({
           console.log('📋 User Data from Session Info:', {
             user_id: userData.user_id,
             admin_id: userData.admin_id,
-            site_id: userData.site_id,
             organization_id: userData.organization_id,
             user_name: userData.user_name,
             username: userData.username,
@@ -579,14 +585,6 @@ export const useHRMSStore = create<HRMSState>((set, get) => ({
           // Use admin_id if available, otherwise use user_id as fallback
           // For some users, adminId might be their own userId
           const adminId = userData.admin_id || userData.user_id;
-
-          // Extract site_id from session info for attendance API calls
-          const siteId = userData.site_id;
-          if (!siteId) {
-            console.warn('⚠️ site_id missing in session info response. Attendance API calls may fail.');
-          } else {
-            console.log('✅ siteId extracted from session info:', siteId);
-          }
 
           // Extract first assigned project if available
           let assignedProject: AssignedProject | undefined;
@@ -620,7 +618,6 @@ export const useHRMSStore = create<HRMSState>((set, get) => ({
               role: userData.role,
               organizationId: userData.organization_id,
               adminId: adminId, // Use admin_id or fallback to user_id
-              siteId: siteId, // Site ID from session info for attendance API calls
               assignedProject: assignedProject, // Save first assigned project if available
             }
           });
@@ -631,7 +628,7 @@ export const useHRMSStore = create<HRMSState>((set, get) => ({
             hasAssignedProject: !!savedEmployee.assignedProject,
             projectId: savedEmployee.assignedProject?.project_id,
             projectName: savedEmployee.assignedProject?.project_name,
-            siteId: savedEmployee.siteId
+            adminId: savedEmployee.adminId
           });
 
           // Log if adminId was missing and we used fallback
@@ -806,7 +803,6 @@ export const useHRMSStore = create<HRMSState>((set, get) => ({
             console.log('📋 User Data from Session Info (checkAuth):', {
               user_id: userData.user_id,
               admin_id: userData.admin_id,
-              site_id: userData.site_id,
               organization_id: userData.organization_id,
               user_name: userData.user_name,
               username: userData.username,
@@ -817,14 +813,6 @@ export const useHRMSStore = create<HRMSState>((set, get) => ({
 
             // Use admin_id if available, otherwise use user_id as fallback
             const adminId = userData.admin_id || userData.user_id;
-
-            // Extract site_id from session info for attendance API calls
-            const siteId = userData.site_id;
-            if (!siteId) {
-              console.warn('⚠️ site_id missing in session info response (checkAuth). Attendance API calls may fail.');
-            } else {
-              console.log('✅ siteId extracted from session info (checkAuth):', siteId);
-            }
 
             // Extract first assigned project if available
             let assignedProject: AssignedProject | undefined;
@@ -857,7 +845,6 @@ export const useHRMSStore = create<HRMSState>((set, get) => ({
                 role: userData.role,
                 organizationId: userData.organization_id,
                 adminId: adminId, // Use admin_id or fallback to user_id
-                siteId: siteId, // Site ID from session info for attendance API calls
                 assignedProject: assignedProject, // Save first assigned project if available
                 isPhotoUpdated: userData.is_photo_updated ?? get().employee.isPhotoUpdated ?? true, // Store flag, default to true
               }
@@ -869,7 +856,7 @@ export const useHRMSStore = create<HRMSState>((set, get) => ({
               hasAssignedProject: !!savedEmployee.assignedProject,
               projectId: savedEmployee.assignedProject?.project_id,
               projectName: savedEmployee.assignedProject?.project_name,
-              siteId: savedEmployee.siteId,
+              adminId: savedEmployee.adminId,
               isPhotoUpdated: savedEmployee.isPhotoUpdated
             });
 
@@ -964,7 +951,18 @@ export const useHRMSStore = create<HRMSState>((set, get) => ({
     set({ hasSeenOnboarding: true });
   },
 
-  checkIn: async (base64Images?: string[], latitude?: number, longitude?: number, countryMeta?: PunchCountryMeta | null) => {
+  checkIn: async (
+    base64Images?: string[],
+    latitude?: number,
+    longitude?: number,
+    countryMeta?: PunchCountryMeta | null,
+    threeSData?: {
+      workType: "piece_rate" | "subsidy";
+      liftInstallationNumber: string;
+      liftImage: string;
+      selfieImage: string;
+    } | null
+  ) => {
     const state = get();
     const userId = state.employee.id;
 
@@ -985,14 +983,15 @@ export const useHRMSStore = create<HRMSState>((set, get) => ({
     });
 
     try {
-      const response = await apiService.checkInOut(
+      await apiService.checkInOut(
         userId,
         base64Images,
         latitude,
         longitude,
         true,
         projectId,
-        countryMeta ?? null
+        countryMeta ?? null,
+        threeSData ?? null
       );
       // Don't fetch here - let the caller handle it
       return { success: true };
@@ -1039,10 +1038,10 @@ export const useHRMSStore = create<HRMSState>((set, get) => ({
   fetchTodayAttendance: async () => {
     const state = get();
     const userId = state.employee.id;
-    const siteId = state.employee.siteId;
+    const adminId = state.employee.adminId;
 
-    if (!userId || !siteId) {
-      console.log('Cannot fetch today attendance: missing userId or siteId', { userId, siteId });
+    if (!userId || !adminId) {
+      console.log('Cannot fetch today attendance: missing userId or adminId', { userId, adminId });
       return;
     }
 
@@ -1054,8 +1053,7 @@ export const useHRMSStore = create<HRMSState>((set, get) => ({
       const day = String(now.getDate()).padStart(2, '0');
       const today = `${year}-${month}-${day}`;
 
-      // Use employee-attendance API with site_id and user_id to get today's attendance
-      const response = await apiService.getUserAttendanceByDate(siteId, userId, today);
+      const response = await apiService.getUserAttendanceByDate(adminId, userId, today);
 
       if (response.data && response.data.length > 0) {
         // Get the first (and should be only) attendance record for this user
@@ -1141,6 +1139,8 @@ export const useHRMSStore = create<HRMSState>((set, get) => ({
             checkInCountryCode: attendance.check_in_country_code ?? null,
             checkOutCountry: attendance.check_out_country ?? null,
             checkOutCountryCode: attendance.check_out_country_code ?? null,
+            threeSWorkType: attendance.three_s_work_type ?? null,
+            threeSWorkTypeDisplay: attendance.three_s_work_type_display ?? null,
           };
 
           set({ todayAttendance: attendanceRecord });
@@ -1158,14 +1158,14 @@ export const useHRMSStore = create<HRMSState>((set, get) => ({
     }
   },
 
-  // Fetch attendance after punch - uses employee-attendance API with site_id and user_id
+  // Fetch attendance after punch — employee-attendance path uses admin UUID + user UUID
   fetchAttendanceAfterPunch: async () => {
     const state = get();
     const userId = state.employee.id;
-    const siteId = state.employee.siteId;
+    const adminId = state.employee.adminId;
 
-    if (!userId || !siteId) {
-      console.log('Cannot fetch attendance: missing userId or siteId', { userId, siteId });
+    if (!userId || !adminId) {
+      console.log('Cannot fetch attendance: missing userId or adminId', { userId, adminId });
       return;
     }
 
@@ -1176,10 +1176,9 @@ export const useHRMSStore = create<HRMSState>((set, get) => ({
       const month = String(now.getMonth() + 1).padStart(2, '0');
       const day = String(now.getDate()).padStart(2, '0');
       const today = `${year}-${month}-${day}`;
-      console.log('Fetching attendance for user:', { siteId, userId, today });
+      console.log('Fetching attendance for user:', { adminId, userId, today });
 
-      // Call employee-attendance API with site_id and user_id
-      const response = await apiService.getUserAttendanceByDate(siteId, userId, today);
+      const response = await apiService.getUserAttendanceByDate(adminId, userId, today);
       console.log('Attendance API response (fetchAttendanceAfterPunch):', JSON.stringify(response, null, 2));
 
       if (response.data && response.data.length > 0) {
@@ -1266,6 +1265,8 @@ export const useHRMSStore = create<HRMSState>((set, get) => ({
             checkInCountryCode: attendance.check_in_country_code ?? null,
             checkOutCountry: attendance.check_out_country ?? null,
             checkOutCountryCode: attendance.check_out_country_code ?? null,
+            threeSWorkType: attendance.three_s_work_type ?? null,
+            threeSWorkTypeDisplay: attendance.three_s_work_type_display ?? null,
           };
 
           set({ todayAttendance: attendanceRecord });
@@ -1389,6 +1390,8 @@ export const useHRMSStore = create<HRMSState>((set, get) => ({
           checkInCountryCode: item.check_in_country_code ?? null,
           checkOutCountry: item.check_out_country ?? null,
           checkOutCountryCode: item.check_out_country_code ?? null,
+          threeSWorkType: item.three_s_work_type ?? null,
+          threeSWorkTypeDisplay: item.three_s_work_type_display ?? null,
         };
       });
 
@@ -1403,18 +1406,17 @@ export const useHRMSStore = create<HRMSState>((set, get) => ({
   fetchAttendanceByDate: async (date: string) => {
     const state = get();
     const userId = state.employee.id;
-    const siteId = state.employee.siteId;
+    const adminId = state.employee.adminId;
 
-    if (!userId || !siteId) {
-      console.log('❌ Cannot fetch attendance by date: missing userId or siteId', { userId, siteId });
+    if (!userId || !adminId) {
+      console.log('❌ Cannot fetch attendance by date: missing userId or adminId', { userId, adminId });
       return null;
     }
 
     try {
-      console.log('📅 Fetching attendance for date:', { siteId, userId, date });
+      console.log('📅 Fetching attendance for date:', { adminId, userId, date });
 
-      // Call employee-attendance API with site_id and user_id for specific date
-      const response = await apiService.getUserAttendanceByDate(siteId, userId, date);
+      const response = await apiService.getUserAttendanceByDate(adminId, userId, date);
       console.log('📥 Attendance API response for date:', date);
       console.log('📦 Response structure:', {
         hasData: !!response.data,
@@ -1527,6 +1529,8 @@ export const useHRMSStore = create<HRMSState>((set, get) => ({
           checkInCountryCode: attendance.check_in_country_code ?? null,
           checkOutCountry: attendance.check_out_country ?? null,
           checkOutCountryCode: attendance.check_out_country_code ?? null,
+          threeSWorkType: attendance.three_s_work_type ?? null,
+          threeSWorkTypeDisplay: attendance.three_s_work_type_display ?? null,
         };
 
         console.log('✅ Parsed attendance record:', attendanceRecord);
@@ -1552,14 +1556,14 @@ export const useHRMSStore = create<HRMSState>((set, get) => ({
 
   fetchLeaveTypes: async () => {
     const state = get();
-    const siteId = state.employee.siteId;
+    const adminId = state.employee.adminId;
 
-    if (!siteId) {
-      return { success: false, error: "Site ID not found. Please login again." };
+    if (!adminId) {
+      return { success: false, error: "Admin ID not found. Please login again." };
     }
 
     try {
-      const response = await apiService.getLeaveTypes(siteId);
+      const response = await apiService.getLeaveTypes(adminId);
       // Store leave types if needed for future use
       console.log('Leave types fetched:', response.data?.length || 0);
       return { success: true };
@@ -1572,17 +1576,17 @@ export const useHRMSStore = create<HRMSState>((set, get) => ({
 
   applyLeave: async (leave) => {
     const state = get();
-    const siteId = state.employee.siteId;
+    const adminId = state.employee.adminId;
     const userId = state.employee.id;
 
-    if (!siteId || !userId) {
-      return { success: false, error: "User ID or Site ID not found. Please login again." };
+    if (!adminId || !userId) {
+      return { success: false, error: "User ID or admin context not found. Please login again." };
     }
 
     // First, fetch leave types to get the correct ID
     let leaveTypeId: number | null = null;
     try {
-      const leaveTypesResponse = await apiService.getLeaveTypes(siteId);
+      const leaveTypesResponse = await apiService.getLeaveTypes(adminId);
       const leaveTypes = leaveTypesResponse.data || [];
 
       // Map leave type string (casual, sick, etc.) to code (CL, SL, etc.)
@@ -1623,7 +1627,7 @@ export const useHRMSStore = create<HRMSState>((set, get) => ({
       const toDate = leave.endDate;
 
       const response = await apiService.applyLeave(
-        siteId,
+        adminId,
         userId,
         leaveTypeId,
         fromDate,
@@ -1678,16 +1682,16 @@ export const useHRMSStore = create<HRMSState>((set, get) => ({
 
   fetchTasks: async (fromDate?: string, toDate?: string) => {
     const state = get();
-    const siteId = state.employee.siteId;
+    const adminId = state.employee.adminId;
     const userId = state.employee.id;
 
-    if (!siteId || !userId) {
-      return { success: false, error: "Site ID or User ID not found. Please login again." };
+    if (!adminId || !userId) {
+      return { success: false, error: "Admin ID or User ID not found. Please login again." };
     }
 
     try {
       // Fetch tasks with date filters if provided
-      const response = await apiService.getMyTasks(siteId, userId, fromDate, toDate);
+      const response = await apiService.getMyTasks(adminId, userId, fromDate, toDate);
 
       if (response.data) {
         // Convert API response to Task format
@@ -1749,10 +1753,10 @@ export const useHRMSStore = create<HRMSState>((set, get) => ({
 
   updateTaskStatus: async (taskId, status, comment) => {
     const state = get();
-    const siteId = state.employee.siteId;
+    const adminId = state.employee.adminId;
 
-    if (!siteId) {
-      return { success: false, error: "Site ID not found. Please login again." };
+    if (!adminId) {
+      return { success: false, error: "Admin ID not found. Please login again." };
     }
 
     try {
@@ -1761,7 +1765,7 @@ export const useHRMSStore = create<HRMSState>((set, get) => ({
         return { success: false, error: "Invalid task ID." };
       }
 
-      const response = await apiService.updateTaskStatus(siteId, taskIdNumber, status, comment);
+      const response = await apiService.updateTaskStatus(adminId, taskIdNumber, status, comment);
 
       if (response.status === 200 || response.status === 201) {
         // Update local state with new task data
@@ -1836,14 +1840,14 @@ export const useHRMSStore = create<HRMSState>((set, get) => ({
 
   fetchHolidays: async () => {
     const state = get();
-    const siteId = state.employee.siteId;
+    const adminId = state.employee.adminId;
 
-    if (!siteId) {
-      return { success: false, error: "Site ID not found. Please login again." };
+    if (!adminId) {
+      return { success: false, error: "Admin ID not found. Please login again." };
     }
 
     try {
-      const response = await apiService.getHolidays(siteId);
+      const response = await apiService.getHolidays(adminId);
 
       // Convert API response to Holiday format
       const holidays: Holiday[] = (response.data || []).map((holiday) => ({

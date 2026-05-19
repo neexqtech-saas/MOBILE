@@ -1,6 +1,9 @@
 import React, { useState, useEffect } from "react";
-import { View, StyleSheet, TextInput, Pressable, Alert, ActivityIndicator, Modal, ScrollView } from "react-native";
+import { View, StyleSheet, TextInput, Pressable, Alert, ActivityIndicator, Modal, ScrollView, Platform } from "react-native";
 import { Feather } from "@expo/vector-icons";
+import * as ImagePicker from "expo-image-picker";
+import * as FileSystem from "expo-file-system";
+import { Image } from "expo-image";
 import { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { useNavigation } from "@react-navigation/native";
 
@@ -18,6 +21,72 @@ type CreateExpenseScreenNavigationProp = NativeStackNavigationProp<
   HomeStackParamList,
   "CreateExpense"
 >;
+
+type ExpenseReceiptAttachment = {
+  dataUrl: string;
+  previewUri: string;
+  fileName: string;
+  mimeType: string;
+};
+
+async function fileUriToDataUrl(uri: string, mimeType: string): Promise<string> {
+  const base64 = await FileSystem.readAsStringAsync(uri, {
+    encoding: "base64",
+  });
+  return `data:${mimeType};base64,${base64}`;
+}
+
+/** Web: pick image or PDF from device files (no extra native module). */
+function pickReceiptFileWeb(): Promise<{
+  dataUrl: string;
+  fileName: string;
+  mimeType: string;
+} | null> {
+  if (typeof document === "undefined") {
+    return Promise.resolve(null);
+  }
+
+  return new Promise((resolve) => {
+    const input = document.createElement("input");
+    input.type = "file";
+    input.accept = "image/*,application/pdf";
+    input.style.display = "none";
+
+    const cleanup = () => {
+      input.remove();
+    };
+
+    input.onchange = () => {
+      const file = input.files?.[0];
+      cleanup();
+      if (!file) {
+        resolve(null);
+        return;
+      }
+
+      const mime = file.type || (file.name.endsWith(".pdf") ? "application/pdf" : "image/jpeg");
+      if (!mime.startsWith("image/") && mime !== "application/pdf") {
+        resolve(null);
+        return;
+      }
+
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        const dataUrl = typeof reader.result === "string" ? reader.result : null;
+        if (!dataUrl) {
+          resolve(null);
+          return;
+        }
+        resolve({ dataUrl, fileName: file.name, mimeType: mime });
+      };
+      reader.onerror = () => resolve(null);
+      reader.readAsDataURL(file);
+    };
+
+    document.body.appendChild(input);
+    input.click();
+  });
+}
 
 export default function CreateExpenseScreen() {
   const navigation = useNavigation<CreateExpenseScreenNavigationProp>();
@@ -40,6 +109,18 @@ export default function CreateExpenseScreen() {
   const [projects, setProjects] = useState<ExpenseProjectAPI[]>([]);
   const [showCategoryModal, setShowCategoryModal] = useState(false);
   const [showProjectModal, setShowProjectModal] = useState(false);
+  const [attachments, setAttachments] = useState<(ExpenseReceiptAttachment | null)[]>([
+    null,
+    null,
+    null,
+  ]);
+  const [pickingAttachmentIndex, setPickingAttachmentIndex] = useState<number | null>(null);
+
+  const ATTACHMENT_LABELS = [
+    { label: "Attachment 1", required: false },
+    { label: "Attachment 2", required: false },
+    { label: "Attachment 3", required: false },
+  ] as const;
 
   // Set today's date as default
   useEffect(() => {
@@ -57,8 +138,8 @@ export default function CreateExpenseScreen() {
   }, []);
 
   const fetchCategories = async () => {
-    const siteId = employee.siteId;
-    if (!siteId) {
+    const adminId = employee.adminId;
+    if (!adminId) {
       Alert.alert(
         "Error",
         "Unable to load categories. Please try again later.",
@@ -69,7 +150,7 @@ export default function CreateExpenseScreen() {
 
     setIsLoadingCategories(true);
     try {
-      const response = await apiService.getExpenseCategories(siteId);
+      const response = await apiService.getExpenseCategories(adminId);
       if (response.status === 200 && response.data) {
         setCategories(response.data);
         if (response.data.length === 0) {
@@ -104,8 +185,8 @@ export default function CreateExpenseScreen() {
   };
 
   const fetchProjects = async () => {
-    const siteId = employee.siteId;
-    if (!siteId) {
+    const adminId = employee.adminId;
+    if (!adminId) {
       Alert.alert(
         "Error",
         "Unable to load projects. Please try again later.",
@@ -116,7 +197,7 @@ export default function CreateExpenseScreen() {
 
     setIsLoadingProjects(true);
     try {
-      const response = await apiService.getExpenseProjects(siteId);
+      const response = await apiService.getExpenseProjects(adminId);
       if (response.status === 200 && response.data) {
         setProjects(response.data);
         if (response.data.length === 0) {
@@ -153,122 +234,186 @@ export default function CreateExpenseScreen() {
   const selectedCategory = categories.find(c => c.id === category);
   const selectedProject = projects.find(p => p.id === project);
 
+  const setAttachmentAt = (index: number, value: ExpenseReceiptAttachment | null) => {
+    setAttachments((prev) => {
+      const next = [...prev];
+      next[index] = value;
+      return next;
+    });
+    setError("");
+  };
+
+  const applyAttachment = async (
+    index: number,
+    uri: string,
+    mimeType: string,
+    fileName: string,
+    existingDataUrl?: string
+  ) => {
+    try {
+      const dataUrl = existingDataUrl ?? (await fileUriToDataUrl(uri, mimeType));
+      setAttachmentAt(index, {
+        dataUrl,
+        previewUri: uri,
+        fileName,
+        mimeType,
+      });
+    } catch (err) {
+      console.error("Error reading receipt file:", err);
+      Alert.alert("Error", "Could not read the selected file. Please try another file.");
+    }
+  };
+
+  const pickImageFromSource = async (index: number, useCamera: boolean) => {
+    setPickingAttachmentIndex(index);
+    try {
+      const permission = useCamera
+        ? await ImagePicker.requestCameraPermissionsAsync()
+        : await ImagePicker.requestMediaLibraryPermissionsAsync();
+
+      if (permission.status !== "granted") {
+        Alert.alert(
+          "Permission required",
+          useCamera
+            ? "Camera permission is required to capture a receipt."
+            : "Gallery permission is required to select a receipt."
+        );
+        return;
+      }
+
+      const result = useCamera
+        ? await ImagePicker.launchCameraAsync({
+            mediaTypes: ImagePicker.MediaTypeOptions.Images,
+            allowsEditing: false,
+            quality: 0.7,
+            base64: true,
+          })
+        : await ImagePicker.launchImageLibraryAsync({
+            mediaTypes: ImagePicker.MediaTypeOptions.Images,
+            allowsEditing: false,
+            quality: 0.7,
+            base64: true,
+          });
+
+      if (!result.canceled && result.assets?.[0]) {
+        const asset = result.assets[0];
+        const mime = asset.mimeType || "image/jpeg";
+        const fileName = asset.fileName || `receipt_${index + 1}.jpg`;
+        if (asset.base64) {
+          const dataUrl = `data:${mime};base64,${asset.base64}`;
+          setAttachmentAt(index, {
+            dataUrl,
+            previewUri: asset.uri,
+            fileName,
+            mimeType: mime,
+          });
+        } else if (asset.uri) {
+          await applyAttachment(index, asset.uri, mime, fileName);
+        }
+      }
+    } catch (err) {
+      console.error("Error picking expense attachment:", err);
+      Alert.alert("Error", "Failed to add image. Please try again.");
+    } finally {
+      setPickingAttachmentIndex(null);
+    }
+  };
+
+  const pickFileFromDevice = async (index: number) => {
+    setPickingAttachmentIndex(index);
+    try {
+      if (Platform.OS === "web") {
+        const picked = await pickReceiptFileWeb();
+        if (!picked) {
+          return;
+        }
+        setAttachmentAt(index, {
+          dataUrl: picked.dataUrl,
+          previewUri: picked.dataUrl,
+          fileName: picked.fileName,
+          mimeType: picked.mimeType,
+        });
+        return;
+      }
+
+      // Native: gallery / file manager for images (no expo-document-picker required)
+      await pickImageFromSource(index, false);
+    } catch (err) {
+      console.error("Error picking document:", err);
+      Alert.alert("Error", "Failed to pick file. Please try again.");
+    } finally {
+      setPickingAttachmentIndex(null);
+    }
+  };
+
+  const handlePickAttachment = (index: number) => {
+    const fileLabel = Platform.OS === "web" ? "Choose file" : "Photos / files";
+    Alert.alert(
+      ATTACHMENT_LABELS[index].label,
+      Platform.OS === "web"
+        ? "Add a receipt (photo or PDF)"
+        : "Add a receipt photo (camera or gallery)",
+      [
+        { text: "Camera", onPress: () => pickImageFromSource(index, true) },
+        { text: "Gallery", onPress: () => pickImageFromSource(index, false) },
+        { text: fileLabel, onPress: () => pickFileFromDevice(index) },
+        { text: "Cancel", style: "cancel" },
+      ]
+    );
+  };
+
   const handleSubmit = async () => {
-    // Clear previous errors
     setError("");
-
-    // Validation with specific error messages
-    if (!category) {
-      const errorMsg = "Please select a category";
-      setError(errorMsg);
-      Alert.alert("Validation Error", errorMsg, [{ text: "OK" }]);
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
-      return;
-    }
-    if (!project) {
-      const errorMsg = "Please select a project";
-      setError(errorMsg);
-      Alert.alert("Validation Error", errorMsg, [{ text: "OK" }]);
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
-      return;
-    }
-    if (!title.trim()) {
-      const errorMsg = "Please enter expense title";
-      setError(errorMsg);
-      Alert.alert("Validation Error", errorMsg, [{ text: "OK" }]);
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
-      return;
-    }
-    if (title.trim().length < 3) {
-      const errorMsg = "Expense title must be at least 3 characters";
-      setError(errorMsg);
-      Alert.alert("Validation Error", errorMsg, [{ text: "OK" }]);
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
-      return;
-    }
-    if (!expenseDate.trim()) {
-      const errorMsg = "Please select expense date";
-      setError(errorMsg);
-      Alert.alert("Validation Error", errorMsg, [{ text: "OK" }]);
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
-      return;
-    }
-    if (!amount.trim()) {
-      const errorMsg = "Please enter amount";
-      setError(errorMsg);
-      Alert.alert("Validation Error", errorMsg, [{ text: "OK" }]);
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
-      return;
-    }
-
-    const amountNum = parseFloat(amount);
-    if (isNaN(amountNum)) {
-      const errorMsg = "Please enter a valid numeric amount";
-      setError(errorMsg);
-      Alert.alert("Validation Error", errorMsg, [{ text: "OK" }]);
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
-      return;
-    }
-    if (amountNum <= 0) {
-      const errorMsg = "Amount must be greater than 0";
-      setError(errorMsg);
-      Alert.alert("Validation Error", errorMsg, [{ text: "OK" }]);
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
-      return;
-    }
-    if (amountNum > 99999999) {
-      const errorMsg = "Amount is too large. Maximum allowed is ₹99,999,999";
-      setError(errorMsg);
-      Alert.alert("Validation Error", errorMsg, [{ text: "OK" }]);
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
-      return;
-    }
-
-    // Validate date format
-    const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
-    if (!dateRegex.test(expenseDate)) {
-      const errorMsg = "Date must be in YYYY-MM-DD format (e.g., 2025-12-20)";
-      setError(errorMsg);
-      Alert.alert("Validation Error", errorMsg, [{ text: "OK" }]);
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
-      return;
-    }
-
-    // Validate date is not in the future
-    const selectedDate = new Date(expenseDate);
-    const today = new Date();
-    today.setHours(23, 59, 59, 999); // End of today
-    if (selectedDate > today) {
-      const errorMsg = "Expense date cannot be in the future";
-      setError(errorMsg);
-      Alert.alert("Validation Error", errorMsg, [{ text: "OK" }]);
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
-      return;
-    }
-
     setIsSubmitting(true);
-    setError("");
 
     try {
-      const siteId = employee.siteId;
+      const adminId = employee.adminId;
       const userId = employee.id;
 
-      if (!siteId || !userId) {
+      if (!adminId || !userId) {
         setError("User ID or Site ID not found. Please login again.");
         setIsSubmitting(false);
         return;
       }
 
-      const expenseData = {
-        category: category,
-        project: project,
-        title: title.trim(),
-        expense_date: expenseDate,
-        amount: amountNum,
+      const today = new Date();
+      const defaultDate = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-${String(today.getDate()).padStart(2, "0")}`;
+      const parsedAmount = amount.trim() ? parseFloat(amount) : NaN;
+
+      const expenseData: {
+        category?: number;
+        project?: number | null;
+        title?: string;
+        expense_date?: string;
+        amount?: number;
+        description?: string;
+        receipt_images?: string[];
+      } = {
+        title: title.trim() || undefined,
+        expense_date: expenseDate.trim() || defaultDate,
         description: description.trim() || undefined,
       };
 
-      const response = await apiService.createExpense(siteId, userId, expenseData);
+      const receiptImages = attachments
+        .filter((item): item is ExpenseReceiptAttachment => Boolean(item))
+        .map((item) => item.dataUrl);
+      if (receiptImages.length > 0) {
+        expenseData.receipt_images = receiptImages;
+      }
+
+      if (category) {
+        expenseData.category = category;
+      }
+      if (project) {
+        expenseData.project = project;
+      } else {
+        expenseData.project = null;
+      }
+      if (!Number.isNaN(parsedAmount)) {
+        expenseData.amount = parsedAmount;
+      }
+
+      const response = await apiService.createExpense(adminId, userId, expenseData);
 
       if (response.status === 200 || response.status === 201) {
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
@@ -337,7 +482,7 @@ export default function CreateExpenseScreen() {
         {/* Category Selection */}
         <View>
           <ThemedText type="small" style={{ color: theme.textMuted, marginBottom: Spacing.xs }}>
-            Category *
+            Category
           </ThemedText>
           <Pressable
             onPress={() => setShowCategoryModal(true)}
@@ -366,7 +511,7 @@ export default function CreateExpenseScreen() {
         {/* Project Selection */}
         <View>
           <ThemedText type="small" style={{ color: theme.textMuted, marginBottom: Spacing.xs }}>
-            Project *
+            Project (optional)
           </ThemedText>
           <Pressable
             onPress={() => setShowProjectModal(true)}
@@ -395,7 +540,7 @@ export default function CreateExpenseScreen() {
         {/* Title */}
         <View>
           <ThemedText type="small" style={{ color: theme.textMuted, marginBottom: Spacing.xs }}>
-            Title *
+            Title (optional)
           </ThemedText>
           <TextInput
             style={[styles.input, { backgroundColor: theme.backgroundDefault, color: theme.text, borderColor: theme.border }]}
@@ -414,7 +559,7 @@ export default function CreateExpenseScreen() {
         {/* Expense Date */}
         <View>
           <ThemedText type="small" style={{ color: theme.textMuted, marginBottom: Spacing.xs }}>
-            Expense Date *
+            Expense Date (optional)
           </ThemedText>
           <TextInput
             style={[styles.input, { backgroundColor: theme.backgroundDefault, color: theme.text, borderColor: theme.border }]}
@@ -433,7 +578,7 @@ export default function CreateExpenseScreen() {
         {/* Amount */}
         <View>
           <ThemedText type="small" style={{ color: theme.textMuted, marginBottom: Spacing.xs }}>
-            Amount *
+            Amount
           </ThemedText>
           <TextInput
             style={[styles.input, { backgroundColor: theme.backgroundDefault, color: theme.text, borderColor: theme.border }]}
@@ -472,6 +617,106 @@ export default function CreateExpenseScreen() {
             numberOfLines={4}
             textAlignVertical="top"
           />
+        </View>
+
+        <Spacer height={Spacing.lg} />
+
+        {/* Receipt attachments */}
+        <View>
+          <ThemedText type="small" style={{ color: theme.textMuted, marginBottom: Spacing.xs }}>
+            Receipt attachments
+          </ThemedText>
+          <ThemedText type="small" style={{ color: theme.textMuted, marginBottom: Spacing.md }}>
+            Optional — up to 3 files (image or PDF). Camera, gallery, or choose from files.
+          </ThemedText>
+          {ATTACHMENT_LABELS.map((slot, index) => {
+            const attachment = attachments[index];
+            const isPicking = pickingAttachmentIndex === index;
+            const isImage = attachment?.mimeType?.startsWith("image/");
+            return (
+              <View key={slot.label} style={{ marginBottom: Spacing.md }}>
+                <ThemedText type="small" style={{ color: theme.text, marginBottom: Spacing.xs }}>
+                  {slot.label}
+                  {slot.required ? " *" : " (optional)"}
+                </ThemedText>
+                {attachment ? (
+                  <View style={[styles.attachmentPreviewWrap, { borderColor: theme.border }]}>
+                    {isImage ? (
+                      <Image
+                        source={{ uri: attachment.previewUri }}
+                        style={styles.attachmentPreview}
+                        contentFit="cover"
+                      />
+                    ) : (
+                      <View style={[styles.filePreview, { backgroundColor: theme.backgroundDefault }]}>
+                        <Feather name="file-text" size={40} color={Colors.dark.primary} />
+                        <ThemedText
+                          type="small"
+                          style={{ marginTop: Spacing.sm, textAlign: "center", color: theme.text }}
+                          numberOfLines={2}
+                        >
+                          {attachment.fileName}
+                        </ThemedText>
+                      </View>
+                    )}
+                    <View style={styles.attachmentActions}>
+                      <Pressable
+                        onPress={() => handlePickAttachment(index)}
+                        disabled={isPicking}
+                        style={[styles.attachmentActionBtn, { backgroundColor: theme.backgroundDefault }]}
+                      >
+                        <Feather name="edit-2" size={16} color={theme.text} />
+                        <ThemedText type="small" style={{ marginLeft: Spacing.xs }}>Change</ThemedText>
+                      </Pressable>
+                      <Pressable
+                        onPress={() => setAttachmentAt(index, null)}
+                        disabled={isPicking}
+                        style={[styles.attachmentActionBtn, { backgroundColor: Colors.dark.error + "20" }]}
+                      >
+                        <Feather name="trash-2" size={16} color={Colors.dark.error} />
+                        <ThemedText type="small" style={{ marginLeft: Spacing.xs, color: Colors.dark.error }}>
+                          Remove
+                        </ThemedText>
+                      </Pressable>
+                    </View>
+                  </View>
+                ) : (
+                  <Pressable
+                    onPress={() => handlePickAttachment(index)}
+                    disabled={isPicking}
+                    style={({ pressed }) => [
+                      styles.attachmentAddButton,
+                      {
+                        backgroundColor: theme.backgroundDefault,
+                        borderColor: slot.required ? Colors.dark.primary : theme.border,
+                        opacity: pressed || isPicking ? 0.9 : 1,
+                      },
+                    ]}
+                  >
+                    {isPicking ? (
+                      <ActivityIndicator size="small" color={theme.textMuted} />
+                    ) : (
+                      <>
+                        <Feather
+                          name="paperclip"
+                          size={22}
+                          color={slot.required ? Colors.dark.primary : theme.textMuted}
+                        />
+                        <ThemedText
+                          style={{
+                            marginLeft: Spacing.sm,
+                            color: slot.required ? Colors.dark.primary : theme.textMuted,
+                          }}
+                        >
+                          Add receipt (optional)
+                        </ThemedText>
+                      </>
+                    )}
+                  </Pressable>
+                )}
+              </View>
+            );
+          })}
         </View>
 
         <Spacer height={Spacing["2xl"]} />
@@ -673,6 +918,44 @@ const styles = StyleSheet.create({
   emptyModalState: {
     padding: Spacing["2xl"],
     alignItems: "center",
+  },
+  attachmentAddButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    padding: Spacing.lg,
+    borderRadius: BorderRadius.md,
+    borderWidth: 1,
+    borderStyle: "dashed",
+  },
+  attachmentPreviewWrap: {
+    borderRadius: BorderRadius.md,
+    borderWidth: 1,
+    overflow: "hidden",
+  },
+  attachmentPreview: {
+    width: "100%",
+    height: 180,
+  },
+  filePreview: {
+    width: "100%",
+    minHeight: 120,
+    padding: Spacing.lg,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  attachmentActions: {
+    flexDirection: "row",
+    padding: Spacing.sm,
+    gap: Spacing.sm,
+  },
+  attachmentActionBtn: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: Spacing.sm,
+    borderRadius: BorderRadius.md,
   },
 });
 

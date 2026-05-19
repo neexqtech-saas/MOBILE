@@ -14,6 +14,7 @@ import ExpenseScreen from "@/screens/ExpenseScreen";
 import CreateExpenseScreen from "@/screens/CreateExpenseScreen";
 import VisitScreen from "@/screens/VisitScreen";
 import CreateVisitScreen from "@/screens/CreateVisitScreen";
+import COCComplianceFormScreen from "@/screens/COCComplianceFormScreen";
 import { ProfessionalHeader } from "@/components/ProfessionalHeader";
 import { HeaderRight } from "@/components/HeaderRight";
 import { useTheme } from "@/hooks/useTheme";
@@ -29,6 +30,7 @@ export type HomeStackParamList = {
   Visits: undefined;
   CreateVisit: undefined;
   Notifications: undefined;
+  COCComplianceForm: undefined;
 };
 
 const Stack = createNativeStackNavigator<HomeStackParamList>();
@@ -133,6 +135,13 @@ export default function HomeStackNavigator() {
         component={CreateVisitScreen}
         options={{
           header: () => <ProfessionalHeader title="Create Visit" />,
+        }}
+      />
+      <Stack.Screen
+        name="COCComplianceForm"
+        component={COCComplianceFormScreen}
+        options={{
+          header: () => <ProfessionalHeader title="Compliance Certificate (COC)" />,
         }}
       />
       <Stack.Screen

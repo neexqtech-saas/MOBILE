@@ -103,11 +103,11 @@ export default function LeaveScreen() {
   // Fetch leave balances on screen load
   useEffect(() => {
     const fetchLeaveBalances = async () => {
-      const siteId = employee.siteId;
+      const adminId = employee.adminId;
       const userId = employee.id;
       
-      if (!siteId || !userId) {
-        setError("User ID or Site ID not found. Please login again.");
+      if (!adminId || !userId) {
+        setError("User ID or admin context not found. Please login again.");
         return;
       }
 
@@ -116,7 +116,7 @@ export default function LeaveScreen() {
 
       try {
         const currentYear = new Date().getFullYear();
-        const response = await apiService.getLeaveBalances(siteId, userId, currentYear);
+        const response = await apiService.getLeaveBalances(adminId, userId, currentYear);
         
         if (response.data) {
           setLeaveBalances(response.data);
@@ -133,15 +133,15 @@ export default function LeaveScreen() {
     };
 
     fetchLeaveBalances();
-  }, [employee.siteId, employee.id]);
+  }, [employee.adminId, employee.id]);
 
   // Fetch leave applications on screen load
   useEffect(() => {
     const fetchLeaveApplications = async () => {
-      const siteId = employee.siteId;
+      const adminId = employee.adminId;
       const userId = employee.id;
       
-      if (!siteId || !userId) {
+      if (!adminId || !userId) {
         return;
       }
 
@@ -149,7 +149,7 @@ export default function LeaveScreen() {
 
       try {
         const currentYear = new Date().getFullYear();
-        const response = await apiService.getLeaveApplications(siteId, userId, currentYear);
+        const response = await apiService.getLeaveApplications(adminId, userId, currentYear);
         
         if (response.data) {
           setLeaveApplications(response.data);
@@ -162,13 +162,13 @@ export default function LeaveScreen() {
     };
 
     fetchLeaveApplications();
-  }, [employee.siteId, employee.id]);
+  }, [employee.adminId, employee.id]);
 
   const handleRefresh = async () => {
-    const siteId = employee.siteId;
+    const adminId = employee.adminId;
     const userId = employee.id;
     
-    if (!siteId || !userId) {
+    if (!adminId || !userId) {
       return;
     }
 
@@ -179,8 +179,8 @@ export default function LeaveScreen() {
     try {
       const currentYear = new Date().getFullYear();
       const [balancesResponse, applicationsResponse] = await Promise.all([
-        apiService.getLeaveBalances(siteId, userId, currentYear),
-        apiService.getLeaveApplications(siteId, userId, currentYear),
+        apiService.getLeaveBalances(adminId, userId, currentYear),
+        apiService.getLeaveApplications(adminId, userId, currentYear),
       ]);
 
       if (balancesResponse.data) {
@@ -203,7 +203,7 @@ export default function LeaveScreen() {
   useFocusEffect(
     React.useCallback(() => {
       handleRefresh();
-    }, [employee.siteId, employee.id])
+    }, [employee.adminId, employee.id])
   );
 
   if (isLoading) {

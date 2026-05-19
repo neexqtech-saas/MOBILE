@@ -81,8 +81,7 @@ export interface SessionInfoResponse {
     user_name?: string; // For user role
     admin_name?: string; // For admin role
     organization_id?: string;
-    admin_id?: string; // For user role
-    site_id?: string; // Site ID from session info
+    admin_id?: string; // For user role — scoped API paths use this UUID
     user_type?: string;
     designation?: string;
     job_title?: string;
@@ -292,6 +291,8 @@ export interface MonthlyAttendanceResponse {
       count: number;
       dates: string[];
     };
+    /** Present dates mapped to 3S work type (piece_rate | subsidy) */
+    three_s_by_date?: Record<string, string>;
   };
   summary: {
     employee_id: string;
@@ -540,13 +541,26 @@ class ApiService {
     longitude?: number,
     isCheckIn: boolean = true,
     projectId?: number,
-    countryMeta?: PunchCountryMeta | null
+    countryMeta?: PunchCountryMeta | null,
+    threeSData?: {
+      workType: "piece_rate" | "subsidy";
+      liftInstallationNumber: string;
+      liftImage: string;
+      selfieImage: string;
+    } | null
   ): Promise<AttendanceCheckResponse> {
     const body: any = {
       marked_by: "mobile"
     };
     if (base64Images && base64Images.length > 0) {
       body.base64_images = base64Images;
+    }
+
+    if (isCheckIn && threeSData) {
+      body.three_s_work_type = threeSData.workType;
+      body.three_s_lift_installation_number = threeSData.liftInstallationNumber;
+      body.three_s_lift_image = threeSData.liftImage;
+      body.three_s_selfie_image = threeSData.selfieImage;
     }
 
     let merged: PunchCountryMeta | null = countryMeta ? { ...countryMeta } : null;
@@ -732,10 +746,10 @@ class ApiService {
     );
   }
 
-  // Get attendance for specific user by site_id and user_id
-  async getUserAttendanceByDate(siteId: string, userId: string, date: string): Promise<AttendanceResponse> {
-    const url = `/api/employee-attendance/${siteId}/${userId}?date=${date}`;
-    console.log('🔍 getUserAttendanceByDate called:', { siteId, userId, date, url });
+  // Get attendance for specific user (first path segment is admin UUID)
+  async getUserAttendanceByDate(adminId: string, userId: string, date: string): Promise<AttendanceResponse> {
+    const url = `/api/employee-attendance/${adminId}/${userId}?date=${date}`;
+    console.log('🔍 getUserAttendanceByDate called:', { adminId, userId, date, url });
     const response = await this.request<AttendanceResponse>(
       url,
       { method: 'GET' },
@@ -751,10 +765,10 @@ class ApiService {
     return response;
   }
 
-  // Get monthly attendance status
-  async getMonthlyAttendance(siteId: string, userId: string, month: number, year: number): Promise<MonthlyAttendanceResponse> {
-    const url = `/api/employee-monthly-attendance/${siteId}/${userId}/${month}/${year}`;
-    console.log('🔍 getMonthlyAttendance called:', { siteId, userId, month, year, url });
+  // Get monthly attendance status (first path segment is admin UUID)
+  async getMonthlyAttendance(adminId: string, userId: string, month: number, year: number): Promise<MonthlyAttendanceResponse> {
+    const url = `/api/employee-monthly-attendance/${adminId}/${userId}/${month}/${year}`;
+    console.log('🔍 getMonthlyAttendance called:', { adminId, userId, month, year, url });
     const response = await this.request<MonthlyAttendanceResponse>(
       url,
       { method: 'GET' },
@@ -782,8 +796,8 @@ class ApiService {
   }
 
   // Get holidays
-  async getHolidays(siteId: string): Promise<HolidayAPIResponse> {
-    const url = `/api/holidays/${siteId}`;
+  async getHolidays(adminId: string): Promise<HolidayAPIResponse> {
+    const url = `/api/holidays/${adminId}`;
     const response = await this.request<HolidayAPI[] | HolidayAPIResponse>(
       url,
       { method: 'GET' },
@@ -799,8 +813,8 @@ class ApiService {
   }
 
   // Get leave types
-  async getLeaveTypes(siteId: string): Promise<LeaveTypeAPIResponse> {
-    const url = `/api/leave-types/${siteId}`;
+  async getLeaveTypes(adminId: string): Promise<LeaveTypeAPIResponse> {
+    const url = `/api/leave-types/${adminId}`;
     const response = await this.request<LeaveTypeAPI[] | LeaveTypeAPIResponse>(
       url,
       { method: 'GET' },
@@ -815,8 +829,8 @@ class ApiService {
   }
 
   // Get leave balances
-  async getLeaveBalances(siteId: string, userId: string, year?: number): Promise<LeaveBalanceAPIResponse> {
-    let url = `/api/leave-balances/${siteId}/${userId}`;
+  async getLeaveBalances(adminId: string, userId: string, year?: number): Promise<LeaveBalanceAPIResponse> {
+    let url = `/api/leave-balances/${adminId}/${userId}`;
     if (year) {
       url += `?year=${year}`;
     }
@@ -835,7 +849,7 @@ class ApiService {
 
   // Apply for leave
   async applyLeave(
-    siteId: string,
+    adminId: string,
     userId: string,
     leaveTypeId: number,
     fromDate: string,
@@ -843,7 +857,7 @@ class ApiService {
     reason: string,
     leaveDayType: "full_day" | "first_half" | "second_half" = "full_day"
   ): Promise<LeaveApplicationAPIResponse> {
-    const url = `/api/leave-applications/${siteId}/${userId}/`;
+    const url = `/api/leave-applications/${adminId}/${userId}/`;
     const body = {
       leave_type: leaveTypeId,
       from_date: fromDate,
@@ -864,11 +878,11 @@ class ApiService {
 
   // Get leave applications list
   async getLeaveApplications(
-    siteId: string,
+    adminId: string,
     userId: string,
     year?: number
   ): Promise<LeaveApplicationsListAPIResponse> {
-    let url = `/api/leave-applications/${siteId}/${userId}/`;
+    let url = `/api/leave-applications/${adminId}/${userId}/`;
     if (year) {
       url += `?year=${year}`;
     }
@@ -881,13 +895,13 @@ class ApiService {
 
   // Get employee tasks
   async getMyTasks(
-    siteId: string,
+    adminId: string,
     userId: string,
     fromDate?: string,
     toDate?: string,
     status?: 'pending' | 'in-progress' | 'completed'
   ): Promise<TaskListAPIResponse> {
-    let url = `/api/task/employee/my-tasks/${siteId}/${userId}`;
+    let url = `/api/task/employee/my-tasks/${adminId}/${userId}`;
     
     // Add parameters if provided
     const params = new URLSearchParams();
@@ -913,12 +927,12 @@ class ApiService {
 
   // Update task status (accept/complete)
   async updateTaskStatus(
-    siteId: string,
+    adminId: string,
     taskId: number,
     status: 'pending' | 'in-progress' | 'completed',
     comment?: string
   ): Promise<TaskUpdateAPIResponse> {
-    const url = `/api/task/employee/update-task-status/${siteId}/${taskId}/`;
+    const url = `/api/task/employee/update-task-status/${adminId}/${taskId}/`;
     // Convert app format (in-progress) to API format (in_progress)
     const apiStatus = status === 'in-progress' ? 'in_progress' : status;
     const body: { status: string; comment?: string } = {
@@ -1545,9 +1559,9 @@ class ApiService {
   // ==================== EXPENSE APIs ====================
 
   // Get Expense Categories
-  async getExpenseCategories(siteId: string): Promise<{ status: number; message: string; data?: ExpenseCategoryAPI[] }> {
-    const url = `/api/expense-categories/${siteId}`;
-    console.log('🔍 Fetching expense categories for siteId:', siteId);
+  async getExpenseCategories(adminId: string): Promise<{ status: number; message: string; data?: ExpenseCategoryAPI[] }> {
+    const url = `/api/expense-categories/${adminId}`;
+    console.log('🔍 Fetching expense categories for adminId:', adminId);
     const response = await this.request<{ status: number; message: string; data?: ExpenseCategoryAPI[] }>(
       url,
       { method: 'GET' },
@@ -1558,9 +1572,9 @@ class ApiService {
   }
 
   // Get Expense Projects
-  async getExpenseProjects(siteId: string): Promise<{ status: number; message: string; data?: ExpenseProjectAPI[] }> {
-    const url = `/api/expense-projects/${siteId}`;
-    console.log('🔍 Fetching expense projects for siteId:', siteId);
+  async getExpenseProjects(adminId: string): Promise<{ status: number; message: string; data?: ExpenseProjectAPI[] }> {
+    const url = `/api/expense-projects/${adminId}`;
+    console.log('🔍 Fetching expense projects for adminId:', adminId);
     const response = await this.request<{ status: number; message: string; data?: ExpenseProjectAPI[] }>(
       url,
       { method: 'GET' },
@@ -1572,18 +1586,19 @@ class ApiService {
 
   // Create Expense
   async createExpense(
-    siteId: string,
+    adminId: string,
     userId: string,
     expenseData: {
-      category: number;
-      project: number;
-      title: string;
-      expense_date: string;
-      amount: number;
+      category?: number;
+      project?: number | null;
+      title?: string;
+      expense_date?: string;
+      amount?: number;
       description?: string;
+      receipt_images?: string[];
     }
   ): Promise<{ status: number; message: string; data?: any }> {
-    const url = `/api/expenses/${siteId}/${userId}/`;
+    const url = `/api/expenses/${adminId}/${userId}/`;
     console.log('📤 Creating expense for userId:', userId);
     const response = await this.request<{ status: number; message: string; data?: any }>(
       url,
@@ -1599,12 +1614,12 @@ class ApiService {
 
   // Get Expenses List
   async getExpenses(
-    siteId: string,
+    adminId: string,
     userId: string,
     fromDate?: string,
     toDate?: string
   ): Promise<{ status: number; message: string; data?: ExpenseAPI[] }> {
-    let url = `/api/expenses/${siteId}/${userId}/`;
+    let url = `/api/expenses/${adminId}/${userId}/`;
     
     // Add date parameters if provided
     const params = new URLSearchParams();
@@ -1629,12 +1644,12 @@ class ApiService {
 
   // Get Visits List
   async getVisits(
-    siteId: string,
+    adminId: string,
     userId: string,
     fromDate?: string,
     toDate?: string
   ): Promise<{ status: number; message: string; data?: VisitListResponse }> {
-    let url = `/api/visit/visit-list-create-by-user/${siteId}/${userId}/`;
+    let url = `/api/visit/visit-list-create-by-user/${adminId}/${userId}/`;
     
     // Add date parameters if provided
     const params = new URLSearchParams();
@@ -1657,7 +1672,7 @@ class ApiService {
 
   // Create Visit
   async createVisit(
-    siteId: string,
+    adminId: string,
     userId: string,
     visitData: {
       title: string;
@@ -1679,7 +1694,7 @@ class ApiService {
       check_in_note?: string;
     }
   ): Promise<{ status: number; message: string; data?: VisitAPI }> {
-    const url = `/api/visit/visit-list-create-by-user/${siteId}/${userId}/`;
+    const url = `/api/visit/visit-list-create-by-user/${adminId}/${userId}/`;
     console.log('📤 Creating visit for userId:', userId);
     const response = await this.request<{ status: number; message: string; data?: VisitAPI }>(
       url,
@@ -1695,7 +1710,7 @@ class ApiService {
 
   // Visit Check-In
   async visitCheckIn(
-    siteId: string,
+    adminId: string,
     userId: string,
     visitId: number,
     checkInData: {
@@ -1704,7 +1719,7 @@ class ApiService {
       note?: string;
     }
   ): Promise<{ status: number; message: string; data?: any }> {
-    const url = `/api/visit/visit-check-in/${siteId}/${userId}/${visitId}/`;
+    const url = `/api/visit/visit-check-in/${adminId}/${userId}/${visitId}/`;
     console.log('📍 Visit check-in for visitId:', visitId);
     const response = await this.request<{ status: number; message: string; data?: any }>(
       url,
@@ -1720,7 +1735,7 @@ class ApiService {
 
   // Visit Check-Out
   async visitCheckOut(
-    siteId: string,
+    adminId: string,
     userId: string,
     visitId: number,
     checkOutData: {
@@ -1729,7 +1744,7 @@ class ApiService {
       note?: string;
     }
   ): Promise<{ status: number; message: string; data?: any }> {
-    const url = `/api/visit/visit-check-out/${siteId}/${userId}/${visitId}/`;
+    const url = `/api/visit/visit-check-out/${adminId}/${userId}/${visitId}/`;
     console.log('📍 Visit check-out for visitId:', visitId);
     const response = await this.request<{ status: number; message: string; data?: any }>(
       url,
@@ -1740,6 +1755,35 @@ class ApiService {
       true
     );
     console.log('📍 Visit check-out response:', response);
+    return response;
+  }
+
+  async getLiftComplianceDefaults(
+    userId: string
+  ): Promise<{ status: number; message: string; data?: Record<string, unknown> }> {
+    return this.request(
+      `/api/lift-compliance/defaults/${userId}/`,
+      { method: "GET" },
+      true
+    );
+  }
+
+  async submitLiftCompliance(
+    userId: string,
+    payload: LiftComplianceSubmitPayload
+  ): Promise<{ status: number; message: string; data?: LiftComplianceRecord }> {
+    const response = await this.request<{
+      status: number;
+      message: string;
+      data?: LiftComplianceRecord;
+    }>(
+      `/api/lift-compliance/submit/${userId}/`,
+      { method: "POST", body: JSON.stringify(payload) },
+      true
+    );
+    if (response.status >= 400) {
+      throw new Error(response.message || "Failed to submit compliance certificate");
+    }
     return response;
   }
 }
@@ -2128,6 +2172,7 @@ export interface OrganizationSettings {
   geofencing_enabled: boolean;
   geofence_radius_in_meters?: number | null;
   device_binding_enabled: boolean;
+  is_3s_client?: boolean;
   plan_name?: string | null;
   plan_assigned_date?: string | null;
   plan_expiry_date?: string | null;
@@ -2164,6 +2209,52 @@ export interface OrganizationSettings {
   };
   created_at: string;
   updated_at: string;
+}
+
+export interface LiftComplianceSubmitPayload {
+  email: string;
+  username: string;
+  phone_number: string;
+  custom_employee_id: string;
+  gender: string;
+  date_of_joining: string;
+  user_name: string;
+  state: string;
+  city: string;
+  date_of_issue: string;
+  /** Optional hint; server assigns unique issue number if taken or omitted */
+  issue_number?: number;
+  location_number: string;
+  product_manufacturer: string;
+  lift_model: string;
+  customer_name: string;
+  customer_address: string;
+  date_of_assessment: string;
+  reference_text: string;
+  inspection_date: string;
+  site_location_name: string;
+  lift_serial_number: string;
+  operating_hours: string;
+  inspected_done_by: string;
+  inspection_remarks: string;
+  certificate_valid_from: string;
+  certificate_valid_to: string;
+  lift_installed_by: string;
+  compliance_inference: string;
+}
+
+export interface LiftComplianceRecord {
+  id: number;
+  certificate_number: string;
+  pdf_file_url?: string | null;
+  excel_file_url?: string | null;
+  user_name: string;
+  custom_employee_id: string;
+  location_number: string;
+  lift_serial_number: string;
+  work_type_display?: string;
+  created_at: string;
+  [key: string]: unknown;
 }
 
 export const apiService = new ApiService(BACKEND_URL);
