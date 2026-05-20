@@ -4,6 +4,9 @@
   },
   "build": {
     "development": {
+      "env": {
+        "EXPO_PUBLIC_BACKEND_URL": "https://app.neexq.com"
+      },
       "developmentClient": true,
       "distribution": "internal",
       "android": {
@@ -14,6 +17,9 @@
       }
     },
     "preview": {
+      "env": {
+        "EXPO_PUBLIC_BACKEND_URL": "https://app.neexq.com"
+      },
       "distribution": "internal",
       "android": {
         "buildType": "apk"
@@ -23,6 +29,9 @@
       }
     },
     "production": {
+      "env": {
+        "EXPO_PUBLIC_BACKEND_URL": "https://app.neexq.com"
+      },
       "android": {
         "buildType": "app-bundle"
       },

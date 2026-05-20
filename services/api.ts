@@ -4,33 +4,30 @@ import Constants from 'expo-constants';
 
 import { countryNameFromIsoCode } from "@/utils/punchLocationTime";
 
+/** Production / dev server — APK build mein .env na bhi load ho to yahi use hoga */
+const DEFAULT_BACKEND_URL = 'https://app.neexq.com';
+
 const getBackendUrl = (): string => {
-  // Sab jagah sirf EXPO_PUBLIC_BACKEND_URL - dev + production dono
-  const envUrl = process.env.EXPO_PUBLIC_BACKEND_URL || 'http://127.0.0.1:8000';
+  const fromExtra = Constants.expoConfig?.extra?.backendUrl as string | undefined;
+  const envUrl =
+    process.env.EXPO_PUBLIC_BACKEND_URL?.trim() ||
+    fromExtra?.trim() ||
+    DEFAULT_BACKEND_URL;
 
-  if (!__DEV__) {
-    return envUrl; // Production bhi .env se
+  const isLocal =
+    envUrl.includes('127.0.0.1') || envUrl.includes('localhost');
+
+  // Remote URL (app.neexq.com etc.) — kabhi localhost replace mat karo
+  if (!isLocal) {
+    return envUrl.replace(/\/$/, '');
   }
 
-  // Agar URL mein already IP address hai (localhost/127.0.0.1 nahi), to use as-is
-  // Yeh physical devices ke liye hai jahan user ne apna local IP set kiya hai
-  const hasIpAddress = /https?:\/\/(\d{1,3}\.){3}\d{1,3}/.test(envUrl);
-  if (hasIpAddress && !envUrl.includes('127.0.0.1') && !envUrl.includes('localhost')) {
-    console.log('🔗 Backend URL (Physical device - custom IP):', envUrl);
-    return envUrl;
+  // Sirf local dev: emulator ke liye Android par 10.0.2.2
+  if (__DEV__ && Platform.OS === 'android') {
+    return envUrl.replace(/127\.0\.0\.1|localhost/gi, '10.0.2.2').replace(/\/$/, '');
   }
 
-  if (Platform.OS === 'android') {
-    // Sirf localhost/127.0.0.1 ko replace karo (emulator ke liye)
-    // Physical device ke liye user ko .env mein apna local IP set karna hoga
-    const url = envUrl.replace(/127\.0\.0\.1|localhost/gi, '10.0.2.2');
-    console.log('🔗 Backend URL (Android - using 10.0.2.2 for emulator):', url);
-    console.log('💡 Note: Agar physical device use kar rahe ho, to .env mein EXPO_PUBLIC_BACKEND_URL=http://YOUR_COMPUTER_IP:8000 set karein');
-    return url;
-  }
-
-  console.log('🔗 Backend URL:', envUrl);
-  return envUrl;
+  return envUrl.replace(/\/$/, '');
 };
 
 /** Backend URL - .env se EXPO_PUBLIC_BACKEND_URL */
