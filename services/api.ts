@@ -305,6 +305,61 @@ export interface MonthlyAttendanceResponse {
   };
 }
 
+export interface AttachmentBreadcrumb {
+  id: number;
+  name: string;
+}
+
+export interface AttachmentFolderItem {
+  id: number;
+  name: string;
+  parent_id: number | null;
+  child_folder_count: number;
+  file_count: number;
+  created_by_name?: string;
+  created_at?: string;
+}
+
+export interface AttachmentFileItem {
+  id: number;
+  folder_id: number | null;
+  file_url: string | null;
+  original_name: string;
+  file_size: number;
+  mime_type: string;
+  file_kind: string;
+  notes?: string;
+  uploaded_by_name?: string;
+  created_at: string;
+}
+
+export interface AttachmentBrowseData {
+  folder_id: number | null;
+  breadcrumbs: AttachmentBreadcrumb[];
+  folders: AttachmentFolderItem[];
+  files: AttachmentFileItem[];
+  stats: { folder_count: number; file_count: number };
+}
+
+export type AttachmentUploadInput = {
+  uri: string;
+  name: string;
+  type: string;
+};
+
+export interface InventoryMaterialAssignment {
+  id: string;
+  employeeName?: string;
+  item: string;
+  quantity: number;
+  unit: string;
+  site: string;
+  assignedDate: string;
+  isReceived?: boolean;
+  receivedAt?: string | null;
+  receiveRemark?: string;
+}
+
 export interface NotificationHistoryItem {
   id: string;
   user: string;
@@ -496,6 +551,37 @@ class ApiService {
       console.log('');
       throw new Error('Network error occurred. Please check your connection.');
     }
+  }
+
+  private async requestMultipart<T>(
+    endpoint: string,
+    formData: FormData,
+    method: string = "POST"
+  ): Promise<T> {
+    const url = `${this.baseURL}${endpoint}`;
+    const headers: Record<string, string> = {};
+    if (this.getAccessToken) {
+      const token = await this.getAccessToken();
+      if (token) {
+        headers.Authorization = `Bearer ${token}`;
+      }
+    }
+    const response = await fetch(url, { method, headers, body: formData });
+    const contentType = response.headers.get("content-type");
+    let data: T;
+    if (contentType?.includes("application/json")) {
+      data = await response.json();
+    } else {
+      const text = await response.text();
+      throw new Error(text || `HTTP ${response.status}: ${response.statusText}`);
+    }
+    if (!response.ok) {
+      const errMsg =
+        (data as { message?: string }).message ||
+        `HTTP ${response.status}: ${response.statusText}`;
+      throw new Error(errMsg);
+    }
+    return data;
   }
 
   async login(credentials: LoginRequest): Promise<LoginResponse> {
@@ -1523,6 +1609,182 @@ class ApiService {
     return response;
   }
 
+  // ==================== INVENTORY (My Materials) ====================
+
+  async getMyInventoryMaterials(
+    adminId: string,
+    userId?: string
+  ): Promise<{
+    status: number;
+    message: string;
+    data: InventoryMaterialAssignment[];
+  }> {
+    const url = userId
+      ? `/api/inventory/my-materials/${adminId}/${userId}/`
+      : `/api/inventory/my-materials/${adminId}/`;
+    return this.request(url, { method: "GET" }, true);
+  }
+
+  async acknowledgeInventoryMaterial(
+    adminId: string,
+    userId: string,
+    issueId: string,
+    remark: string
+  ): Promise<{
+    status: number;
+    message: string;
+    data: InventoryMaterialAssignment;
+  }> {
+    const url = `/api/inventory/my-materials/${adminId}/${userId}/${issueId}/acknowledge/`;
+    return this.request(
+      url,
+      {
+        method: "POST",
+        body: JSON.stringify({ remark }),
+      },
+      true
+    );
+  }
+
+  // ==================== ATTACHMENT MANAGEMENT ====================
+
+  async browseAttachments(
+    adminId: string,
+    params?: { folder_id?: number | null; search?: string }
+  ): Promise<{
+    status: number;
+    message: string;
+    data: AttachmentBrowseData;
+  }> {
+    const query = new URLSearchParams();
+    if (params?.folder_id != null) {
+      query.append("folder_id", String(params.folder_id));
+    }
+    if (params?.search?.trim()) {
+      query.append("search", params.search.trim());
+    }
+    const qs = query.toString();
+    const url = `/api/attachments/browse/${adminId}/${qs ? `?${qs}` : ""}`;
+    return this.request(url, { method: "GET" }, true);
+  }
+
+  async createAttachmentFolder(
+    adminId: string,
+    name: string,
+    parentId?: number | null
+  ): Promise<{
+    status: number;
+    message: string;
+    data: AttachmentFolderItem;
+  }> {
+    const body: { name: string; parent_id?: number | null } = { name };
+    if (parentId != null) {
+      body.parent_id = parentId;
+    }
+    return this.request(
+      `/api/attachments/folders/${adminId}/`,
+      { method: "POST", body: JSON.stringify(body) },
+      true
+    );
+  }
+
+  async deleteAttachmentFolder(
+    adminId: string,
+    folderId: number
+  ): Promise<{ status: number; message: string; data: null }> {
+    return this.request(
+      `/api/attachments/folders/${adminId}/${folderId}/`,
+      { method: "DELETE" },
+      true
+    );
+  }
+
+  async deleteAttachmentFile(
+    adminId: string,
+    fileId: number
+  ): Promise<{ status: number; message: string; data: null }> {
+    return this.request(
+      `/api/attachments/files/${adminId}/${fileId}/`,
+      { method: "DELETE" },
+      true
+    );
+  }
+
+  private async buildAttachmentUploadFormData(
+    file: AttachmentUploadInput,
+    folderId?: number | null
+  ): Promise<FormData> {
+    const formData = new FormData();
+
+    if (Platform.OS === "web") {
+      const response = await fetch(file.uri);
+      const blob = await response.blob();
+      formData.append("file", blob, file.name);
+    } else {
+      formData.append("file", {
+        uri: file.uri,
+        name: file.name,
+        type: file.type,
+      } as { uri: string; name: string; type: string });
+    }
+
+    if (folderId != null) {
+      formData.append("folder_id", String(folderId));
+    }
+    return formData;
+  }
+
+  async uploadAttachmentFile(
+    adminId: string,
+    file: AttachmentUploadInput,
+    folderId?: number | null
+  ): Promise<{
+    status: number;
+    message: string;
+    data: AttachmentFileItem;
+  }> {
+    const formData = await this.buildAttachmentUploadFormData(file, folderId);
+    return this.requestMultipart(`/api/attachments/files/${adminId}/`, formData);
+  }
+
+  /** Upload one or more files via single-file API (reliable on React Native). */
+  async uploadAttachmentFiles(
+    adminId: string,
+    files: AttachmentUploadInput[],
+    folderId?: number | null
+  ): Promise<{
+    status: number;
+    message: string;
+    data: { uploaded: AttachmentFileItem[]; errors: { name: string; error: string }[] };
+  }> {
+    const uploaded: AttachmentFileItem[] = [];
+    const errors: { name: string; error: string }[] = [];
+
+    for (const file of files) {
+      try {
+        const res = await this.uploadAttachmentFile(adminId, file, folderId);
+        if (res.data) {
+          uploaded.push(res.data);
+        }
+      } catch (err) {
+        errors.push({
+          name: file.name,
+          error: err instanceof Error ? err.message : "Upload failed",
+        });
+      }
+    }
+
+    if (uploaded.length === 0 && errors.length > 0) {
+      throw new Error(errors[0].error);
+    }
+
+    return {
+      status: uploaded.length > 0 ? 201 : 400,
+      message: `${uploaded.length} file(s) uploaded`,
+      data: { uploaded, errors },
+    };
+  }
+
   // ==================== NOTIFICATION APIs ====================
 
   async getNotificationHistory(
@@ -1766,6 +2028,32 @@ class ApiService {
       { method: "GET" },
       true
     );
+  }
+
+  async getMyCOCertificates(
+    userId: string,
+    params?: { date_from?: string; date_to?: string; page?: number; page_size?: number }
+  ): Promise<{
+    status: number;
+    message: string;
+    data: LiftComplianceRecord[];
+    pagination?: {
+      total_items: number;
+      total_pages: number;
+      current_page: number;
+      page_size: number;
+      has_next: boolean;
+      has_previous: boolean;
+    };
+  }> {
+    const q = new URLSearchParams();
+    if (params?.date_from) q.set("date_from", params.date_from);
+    if (params?.date_to) q.set("date_to", params.date_to);
+    if (params?.page) q.set("page", String(params.page));
+    if (params?.page_size) q.set("page_size", String(params.page_size));
+    const qs = q.toString();
+    const url = `/api/lift-compliance/my-certificates/${userId}${qs ? `?${qs}` : ""}`;
+    return this.request(url, { method: "GET" }, true);
   }
 
   async submitLiftCompliance(
@@ -2198,13 +2486,15 @@ export interface OrganizationSettings {
     "run-payroll"?: boolean;
     "payslip-generator"?: boolean;
     "payroll-settings"?: boolean;
-    "asset-management"?: boolean;
     "production-management"?: boolean;
     "holiday-calendar"?: boolean;
     "shift-management"?: boolean;
     locations?: boolean;
     "week-offs"?: boolean;
     "leave-types"?: boolean;
+    "inventory-management"?: boolean;
+    "attachment-management"?: boolean;
+    complianceCertificates?: boolean;
     [key: string]: boolean | undefined;
   };
   created_at: string;
@@ -2246,13 +2536,16 @@ export interface LiftComplianceSubmitPayload {
 export interface LiftComplianceRecord {
   id: number;
   certificate_number: string;
+  date_of_issue?: string;
   pdf_file_url?: string | null;
   excel_file_url?: string | null;
-  user_name: string;
-  custom_employee_id: string;
-  location_number: string;
-  lift_serial_number: string;
-  work_type_display?: string;
+  user_name?: string;
+  custom_employee_id?: string;
+  location_number?: string;
+  site_location_name?: string;
+  lift_serial_number?: string;
+  lift_model?: string;
+  inspection_date?: string;
   created_at: string;
   [key: string]: unknown;
 }

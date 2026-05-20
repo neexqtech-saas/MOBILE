@@ -238,7 +238,7 @@ export default function COCComplianceFormScreen() {
       const certNo = res.data?.certificate_number;
       const pdfUrl = res.data?.pdf_file_url;
 
-      navigation.goBack();
+      navigation.navigate("COCCertificates");
 
       setTimeout(() => {
         Alert.alert(

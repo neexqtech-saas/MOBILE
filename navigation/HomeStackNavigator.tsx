@@ -15,6 +15,9 @@ import CreateExpenseScreen from "@/screens/CreateExpenseScreen";
 import VisitScreen from "@/screens/VisitScreen";
 import CreateVisitScreen from "@/screens/CreateVisitScreen";
 import COCComplianceFormScreen from "@/screens/COCComplianceFormScreen";
+import COCCertificatesScreen from "@/screens/COCCertificatesScreen";
+import MyMaterialsScreen from "@/screens/MyMaterialsScreen";
+import AttachmentsScreen from "@/screens/AttachmentsScreen";
 import { ProfessionalHeader } from "@/components/ProfessionalHeader";
 import { HeaderRight } from "@/components/HeaderRight";
 import { useTheme } from "@/hooks/useTheme";
@@ -30,7 +33,10 @@ export type HomeStackParamList = {
   Visits: undefined;
   CreateVisit: undefined;
   Notifications: undefined;
+  COCCertificates: undefined;
   COCComplianceForm: undefined;
+  MyMaterials: undefined;
+  Attachments: undefined;
 };
 
 const Stack = createNativeStackNavigator<HomeStackParamList>();
@@ -138,10 +144,35 @@ export default function HomeStackNavigator() {
         }}
       />
       <Stack.Screen
+        name="COCCertificates"
+        component={COCCertificatesScreen}
+        options={{
+          headerTransparent: false,
+          header: () => <ProfessionalHeader title="My COC Certificates" />,
+        }}
+      />
+      <Stack.Screen
         name="COCComplianceForm"
         component={COCComplianceFormScreen}
         options={{
-          header: () => <ProfessionalHeader title="Compliance Certificate (COC)" />,
+          headerTransparent: false,
+          header: () => <ProfessionalHeader title="New COC Form" />,
+        }}
+      />
+      <Stack.Screen
+        name="MyMaterials"
+        component={MyMaterialsScreen}
+        options={{
+          headerTransparent: false,
+          header: () => <ProfessionalHeader title="My Materials" />,
+        }}
+      />
+      <Stack.Screen
+        name="Attachments"
+        component={AttachmentsScreen}
+        options={{
+          headerTransparent: false,
+          header: () => <ProfessionalHeader title="Files & Folders" />,
         }}
       />
       <Stack.Screen

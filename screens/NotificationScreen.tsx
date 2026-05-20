@@ -4,10 +4,16 @@ import { Feather } from "@expo/vector-icons";
 
 import { ThemedText } from "@/components/ThemedText";
 import { Colors, Spacing, BorderRadius } from "@/constants/theme";
+import { useNavigation } from "@react-navigation/native";
+import { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { useHRMSStore } from "@/store/hrmsStore";
 import type { NotificationHistoryItem } from "@/services/api";
+import type { HomeStackParamList } from "@/navigation/HomeStackNavigator";
+
+type NotificationNav = NativeStackNavigationProp<HomeStackParamList, "Notifications">;
 
 export default function NotificationScreen() {
+    const navigation = useNavigation<NotificationNav>();
     const {
         notificationHistory,
         fetchNotificationHistory,
@@ -36,6 +42,8 @@ export default function NotificationScreen() {
                 return "calendar";
             case "attendance_alert":
                 return "clock";
+            case "material_issued":
+                return "package";
             default:
                 return "bell";
         }
@@ -53,6 +61,8 @@ export default function NotificationScreen() {
                 return "#EF4444"; // Red
             case "attendance_alert":
                 return "#F59E0B"; // Amber
+            case "material_issued":
+                return "#D4693E"; // Inventory orange
             default:
                 return Colors.dark.primary;
         }
@@ -86,8 +96,14 @@ export default function NotificationScreen() {
             markNotificationAsRead(notification.id);
         }
         // Handle navigation based on notification type/data if needed
+        if (
+            notification.notification_type === "material_issued" ||
+            notification.data?.type === "material_issued"
+        ) {
+            navigation.navigate("MyMaterials");
+            return;
+        }
         if (notification.data?.task_id) {
-            // Navigate to task detail if possible
             console.log('🔗 Should navigate to task:', notification.data.task_id);
         }
     };

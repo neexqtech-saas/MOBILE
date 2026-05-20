@@ -114,6 +114,7 @@ export default function HomeScreen() {
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [pendingTasksCount, setPendingTasksCount] = useState(0);
   const [pendingVisitsCount, setPendingVisitsCount] = useState(0);
+  const [materialsCount, setMaterialsCount] = useState(0);
   const [cameraPermissionStatus, setCameraPermissionStatus] = useState<string | null>(null);
   const [showThreeSModal, setShowThreeSModal] = useState(false);
 
@@ -253,6 +254,16 @@ export default function HomeScreen() {
       }
     } catch (error) {
       console.error('❌ Error fetching pending visits count:', error);
+    }
+
+    try {
+      const materialsRes = await apiService.getMyInventoryMaterials(adminId, userId);
+      if (materialsRes.status === 200 && Array.isArray(materialsRes.data)) {
+        const pending = materialsRes.data.filter((m: { isReceived?: boolean }) => !m.isReceived);
+        setMaterialsCount(pending.length);
+      }
+    } catch (error) {
+      console.error('❌ Error fetching materials count:', error);
     }
   };
 
@@ -1122,11 +1133,29 @@ export default function HomeScreen() {
     },
     { icon: "dollar-sign" as const, label: "Expenses", onPress: () => navigation.navigate("Expenses"), menuKey: "expense" },
     { icon: "map-pin" as const, label: "Visits", onPress: () => navigation.navigate("Visits"), menuKey: "visit" },
+  ];
+
+  const allFieldShortcuts = [
+    {
+      icon: "package" as const,
+      label: "My Materials",
+      onPress: () => navigation.navigate("MyMaterials"),
+      menuKey: "inventory-management",
+    },
     {
       icon: "file-text" as const,
-      label: "COC Form",
-      onPress: () => navigation.navigate("COCComplianceForm"),
+      label: "COC Certificates",
+      onPress: () => navigation.navigate("COCCertificates"),
       menuKey: "complianceCertificates",
+    },
+  ];
+
+  const allAttachmentShortcuts = [
+    {
+      icon: "folder" as const,
+      label: "Files & Folders",
+      onPress: () => navigation.navigate("Attachments"),
+      menuKey: "attachment-management",
     },
   ];
 
@@ -1145,6 +1174,16 @@ export default function HomeScreen() {
     const isEnabled = enabledMenuItems[shortcut.menuKey];
     // Show if true or undefined, hide only if explicitly false
     return isEnabled !== false;
+  });
+
+  const fieldShortcuts = allFieldShortcuts.filter((shortcut) => {
+    if (!hasSettings) return true;
+    return enabledMenuItems[shortcut.menuKey] !== false;
+  });
+
+  const attachmentShortcuts = allAttachmentShortcuts.filter((shortcut) => {
+    if (!hasSettings) return true;
+    return enabledMenuItems[shortcut.menuKey] !== false;
   });
 
   // Debug: Log shortcuts for troubleshooting
@@ -1692,6 +1731,160 @@ export default function HomeScreen() {
           </View>
         </View>
 
+        {fieldShortcuts.length > 0 ? (
+          <>
+            <Spacer height={Spacing.xl} />
+            <View
+              style={[
+                styles.sectionCard,
+                { marginHorizontal: sectionMarginX, padding: isTinyPhone ? Spacing.lg : Spacing.xl },
+              ]}
+            >
+              <View style={styles.sectionHeader}>
+                <View style={styles.sectionTitleRow}>
+                  <Feather name="package" size={20} color="#1E293B" />
+                  <ThemedText type="h4" style={styles.sectionTitle}>
+                    Materials & Certificates
+                  </ThemedText>
+                </View>
+              </View>
+              <View style={[styles.shortcutsGrid, { gap: shortcutsGridGap }]}>
+                {fieldShortcuts.map((shortcut, index) => {
+                  let badgeCount = 0;
+                  if (shortcut.menuKey === "inventory-management") {
+                    badgeCount = materialsCount;
+                  }
+
+                  return (
+                    <Pressable
+                      key={index}
+                      onPress={() => {
+                        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                        shortcut.onPress();
+                      }}
+                      style={({ pressed }) => [
+                        styles.shortcutItem,
+                        pressed && styles.shortcutItemPressed,
+                        {
+                          opacity: pressed ? 0.8 : 1,
+                          transform: [{ scale: pressed ? 0.95 : 1 }],
+                        },
+                        { flex: 1, minWidth: 0, padding: shortcutItemPadding },
+                      ]}
+                    >
+                      <View
+                        style={[
+                          styles.shortcutIconContainer,
+                          { width: shortcutIconSize, height: shortcutIconSize },
+                        ]}
+                      >
+                        <Feather name={shortcut.icon} size={isTinyPhone ? 20 : 24} color="#2563EB" />
+                        {badgeCount > 0 && (
+                          <View style={styles.badge}>
+                            <ThemedText style={styles.badgeText}>
+                              {badgeCount > 99 ? "99+" : badgeCount}
+                            </ThemedText>
+                          </View>
+                        )}
+                      </View>
+                      <ThemedText
+                        type="small"
+                        style={[
+                          styles.shortcutLabel,
+                          {
+                            fontSize: shortcutLabelFontSize,
+                            width: "100%",
+                            flexShrink: 1,
+                            letterSpacing: isTinyPhone ? -0.25 : isNarrowLayout ? -0.15 : 0,
+                          },
+                        ]}
+                        numberOfLines={shortcutLabelLines}
+                        ellipsizeMode="tail"
+                        {...(Platform.OS !== "web"
+                          ? { adjustsFontSizeToFit: true, minimumFontScale: shortcutLabelMinScale }
+                          : {})}
+                        {...(Platform.OS === "android" ? { includeFontPadding: false } : {})}
+                      >
+                        {shortcut.label}
+                      </ThemedText>
+                    </Pressable>
+                  );
+                })}
+              </View>
+            </View>
+          </>
+        ) : null}
+
+        {attachmentShortcuts.length > 0 ? (
+          <>
+            <Spacer height={Spacing.xl} />
+            <View
+              style={[
+                styles.sectionCard,
+                { marginHorizontal: sectionMarginX, padding: isTinyPhone ? Spacing.lg : Spacing.xl },
+              ]}
+            >
+              <View style={styles.sectionHeader}>
+                <View style={styles.sectionTitleRow}>
+                  <Feather name="paperclip" size={20} color="#1E293B" />
+                  <ThemedText type="h4" style={styles.sectionTitle}>
+                    Attachments
+                  </ThemedText>
+                </View>
+              </View>
+              <View style={[styles.shortcutsGrid, { gap: shortcutsGridGap }]}>
+                {attachmentShortcuts.map((shortcut, index) => (
+                  <Pressable
+                    key={index}
+                    onPress={() => {
+                      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                      shortcut.onPress();
+                    }}
+                    style={({ pressed }) => [
+                      styles.shortcutItem,
+                      pressed && styles.shortcutItemPressed,
+                      {
+                        opacity: pressed ? 0.8 : 1,
+                        transform: [{ scale: pressed ? 0.95 : 1 }],
+                      },
+                      { flex: 1, minWidth: 0, padding: shortcutItemPadding },
+                    ]}
+                  >
+                    <View
+                      style={[
+                        styles.shortcutIconContainer,
+                        { width: shortcutIconSize, height: shortcutIconSize },
+                      ]}
+                    >
+                      <Feather name={shortcut.icon} size={isTinyPhone ? 20 : 24} color="#2563EB" />
+                    </View>
+                    <ThemedText
+                      type="small"
+                      style={[
+                        styles.shortcutLabel,
+                        {
+                          fontSize: shortcutLabelFontSize,
+                          width: "100%",
+                          flexShrink: 1,
+                          letterSpacing: isTinyPhone ? -0.25 : isNarrowLayout ? -0.15 : 0,
+                        },
+                      ]}
+                      numberOfLines={shortcutLabelLines}
+                      ellipsizeMode="tail"
+                      {...(Platform.OS !== "web"
+                        ? { adjustsFontSizeToFit: true, minimumFontScale: shortcutLabelMinScale }
+                        : {})}
+                      {...(Platform.OS === "android" ? { includeFontPadding: false } : {})}
+                    >
+                      {shortcut.label}
+                    </ThemedText>
+                  </Pressable>
+                ))}
+              </View>
+            </View>
+          </>
+        ) : null}
+
         <Spacer height={Spacing["3xl"]} />
       </ScreenScrollView>
 
@@ -1997,6 +2190,42 @@ const styles = StyleSheet.create({
     fontWeight: "600",
     color: "#334155",
     alignSelf: "stretch",
+  },
+  standaloneBox: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingVertical: Spacing.sm,
+  },
+  standaloneBoxPressed: {
+    opacity: 0.85,
+  },
+  standaloneBoxLeft: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    minWidth: 0,
+    marginRight: Spacing.md,
+  },
+  standaloneBoxIcon: {
+    marginBottom: 0,
+    marginRight: Spacing.md,
+    flexShrink: 0,
+  },
+  standaloneBoxTextWrap: {
+    flex: 1,
+    minWidth: 0,
+  },
+  standaloneBoxTitle: {
+    color: "#0F172A",
+    fontWeight: "700",
+    fontSize: 16,
+    marginBottom: 4,
+  },
+  standaloneBoxSubtitle: {
+    color: "#64748B",
+    fontSize: 13,
+    lineHeight: 18,
   },
   badge: {
     position: "absolute",

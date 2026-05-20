@@ -11,6 +11,7 @@ import Toast, { BaseToastProps } from "react-native-toast-message";
 
 import MainTabNavigator from "@/navigation/MainTabNavigator";
 import AuthStackNavigator from "@/navigation/AuthStackNavigator";
+import { navigationRef, navigateToMyMaterials } from "@/navigation/navigationRef";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { useHRMSStore } from "@/store/hrmsStore";
 
@@ -172,7 +173,7 @@ export default function App() {
 
   // Helper: Determine toast type
   const getToastType = (type: string | any): 'success' | 'error' | 'info' => {
-    if (type === 'task_assigned' || type === 'task_completed') return 'success';
+    if (type === 'task_assigned' || type === 'task_completed' || type === 'material_issued') return 'success';
     if (type === 'error' || type === 'task_rejected') return 'error';
     return 'info';
   };
@@ -180,6 +181,10 @@ export default function App() {
   // Helper: Handle tap navigation
   const handleNotificationTap = (data: any) => {
     console.log('Tapped notification data:', data);
+    if (data?.type === 'material_issued' || data?.notification_type === 'material_issued') {
+      navigateToMyMaterials();
+      return;
+    }
     if (data.type === 'task_assigned' && data.task_id) {
       console.log('Navigating to task:', data.task_id);
     }
@@ -190,7 +195,7 @@ export default function App() {
       <SafeAreaProvider>
         <GestureHandlerRootView style={styles.root}>
           <KeyboardProvider>
-            <NavigationContainer>
+            <NavigationContainer ref={navigationRef}>
               {isAuthenticated ? <MainTabNavigator /> : <AuthStackNavigator />}
             </NavigationContainer>
             <StatusBar style="auto" />
