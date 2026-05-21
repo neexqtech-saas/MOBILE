@@ -23,6 +23,7 @@ import { useTheme } from "@/hooks/useTheme";
 import { Colors, Spacing, BorderRadius, Typography } from "@/constants/theme";
 import { useHRMSStore } from "@/store/hrmsStore";
 import { AuthStackParamList } from "@/navigation/AuthStackNavigator";
+import { BACKEND_URL } from "@/services/api";
 
 type LoginScreenProps = {
   navigation: NativeStackNavigationProp<AuthStackParamList, "Login">;
@@ -109,13 +110,19 @@ export default function LoginScreen({ navigation }: LoginScreenProps) {
               <View style={styles.decorativeCircle3} />
               <View style={styles.logoInner}>
                 <Image
-                  source={require("../assets/images/logo4.png")}
+                  source={require("../assets/images/icon.png")}
                   style={styles.logo}
                   resizeMode="contain"
                 />
               </View>
             </View>
           </View>
+
+          {__DEV__ ? (
+            <Text style={styles.devApiHint} selectable>
+              API: {BACKEND_URL}
+            </Text>
+          ) : null}
 
           {/* Error Message */}
           {error ? (
@@ -360,6 +367,13 @@ const styles = StyleSheet.create({
     flex: 1,
     fontWeight: "400",
     fontFamily: Platform.select({ ios: "System", android: "sans-serif" }),
+  },
+  devApiHint: {
+    fontSize: 11,
+    color: "#64748b",
+    textAlign: "center",
+    marginBottom: Spacing.md,
+    paddingHorizontal: Spacing.sm,
   },
   inputContainer: {
     marginBottom: Spacing.xl,

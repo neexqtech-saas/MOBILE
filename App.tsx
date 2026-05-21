@@ -2,7 +2,7 @@ import React, { useEffect, useRef } from "react";
 import { StyleSheet, Platform, PermissionsAndroid, View, Text, Image } from "react-native";
 import { NavigationContainer } from "@react-navigation/native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
-import { KeyboardProvider } from "react-native-keyboard-controller";
+import { isExpoGo } from "@/utils/expoGo";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 import { StatusBar } from "expo-status-bar";
 import * as Notifications from "expo-notifications";
@@ -14,6 +14,7 @@ import AuthStackNavigator from "@/navigation/AuthStackNavigator";
 import { navigationRef, navigateToMyMaterials } from "@/navigation/navigationRef";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { useHRMSStore } from "@/store/hrmsStore";
+import { BACKEND_URL } from "@/services/api";
 
 // Custom Premium Toast Components
 const PremiumToast = ({ title, body, icon, color }: { title: string; body: string; icon: any; color: string }) => (
@@ -23,7 +24,7 @@ const PremiumToast = ({ title, body, icon, color }: { title: string; body: strin
           <Ionicons name={icon} size={22} color={color} />
         </View>
         <Image 
-          source={require('./assets/images/logo4.png')} 
+          source={require('./assets/images/icon.png')} 
           style={styles.logoInToast}
           resizeMode="contain"
         />
@@ -103,6 +104,12 @@ export default function App() {
   };
 
   useEffect(() => {
+    if (__DEV__) {
+      console.warn("🌐 HRMS API backend:", BACKEND_URL);
+      if (isExpoGo()) {
+        console.warn("📱 Expo Go mode — scan QR from terminal (exp://), not dev build (hrmspro://)");
+      }
+    }
     console.log('🚀 App component mounted - Setting up notification listeners');
     setupNotifications();
 
@@ -121,8 +128,8 @@ export default function App() {
     // Web pe native firebase messaging listeners reliably kaam nahi karte,
     // aur runtime error se blank screen aa sakta hai.
     let unsubscribeMessaging = () => {};
-    if (Platform.OS !== 'web') {
-      // Native Firebase messaging sirf non-web pe enable.
+    if (Platform.OS !== 'web' && !isExpoGo()) {
+      try {
       const messagingFn = require('@react-native-firebase/messaging').default;
 
       unsubscribeMessaging = messagingFn().onMessage(async (remoteMessage: any) => {
@@ -143,6 +150,11 @@ export default function App() {
           console.log('🔥 Notification caused app to open from quit state:', remoteMessage);
         }
       });
+      } catch (e) {
+        console.warn('Firebase messaging skipped:', e);
+      }
+    } else if (isExpoGo()) {
+      console.log('💡 Expo Go — Firebase FCM disabled; use expo-notifications only');
     }
 
     return () => {
@@ -190,21 +202,34 @@ export default function App() {
     }
   };
 
+  const content = (
+    <>
+      <NavigationContainer ref={navigationRef}>
+        {isAuthenticated ? <MainTabNavigator /> : <AuthStackNavigator />}
+      </NavigationContainer>
+      <StatusBar style="auto" />
+      <Toast config={toastConfig} />
+    </>
+  );
+
   return (
     <ErrorBoundary>
       <SafeAreaProvider>
         <GestureHandlerRootView style={styles.root}>
-          <KeyboardProvider>
-            <NavigationContainer ref={navigationRef}>
-              {isAuthenticated ? <MainTabNavigator /> : <AuthStackNavigator />}
-            </NavigationContainer>
-            <StatusBar style="auto" />
-            <Toast config={toastConfig} />
-          </KeyboardProvider>
+          {isExpoGo() ? (
+            <View style={styles.root}>{content}</View>
+          ) : (
+            <ExpoKeyboardProvider>{content}</ExpoKeyboardProvider>
+          )}
         </GestureHandlerRootView>
       </SafeAreaProvider>
     </ErrorBoundary>
   );
+}
+
+function ExpoKeyboardProvider({ children }: { children: React.ReactNode }) {
+  const { KeyboardProvider } = require("react-native-keyboard-controller");
+  return <KeyboardProvider>{children}</KeyboardProvider>;
 }
 
 const styles = StyleSheet.create({

@@ -22,7 +22,7 @@ if (fs.existsSync(envPath)) {
 const appJson = require("./app.json");
 
 const backendUrl =
-  process.env.EXPO_PUBLIC_BACKEND_URL?.trim() || "https://app.neexq.com";
+  process.env.EXPO_PUBLIC_BACKEND_URL?.trim() || "http://192.168.10.36:8000";
 
 module.exports = {
   expo: {

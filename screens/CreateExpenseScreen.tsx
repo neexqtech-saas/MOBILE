@@ -140,45 +140,21 @@ export default function CreateExpenseScreen() {
   const fetchCategories = async () => {
     const adminId = employee.adminId;
     if (!adminId) {
-      Alert.alert(
-        "Error",
-        "Unable to load categories. Please try again later.",
-        [{ text: "OK" }]
-      );
+      setCategories([]);
       return;
     }
 
     setIsLoadingCategories(true);
     try {
       const response = await apiService.getExpenseCategories(adminId);
-      if (response.status === 200 && response.data) {
+      if (response.status === 200 && Array.isArray(response.data)) {
         setCategories(response.data);
-        if (response.data.length === 0) {
-          Alert.alert(
-            "No Categories",
-            "No expense categories available. Please contact your administrator.",
-            [{ text: "OK" }]
-          );
-        }
       } else {
-        const errorMsg = response.message || "Failed to load categories";
-        Alert.alert("Error", errorMsg, [{ text: "OK" }]);
+        setCategories([]);
       }
     } catch (error: any) {
-      console.error('❌ Error fetching categories:', error);
-      let errorMessage = "Failed to load categories. Please check your internet connection and try again.";
-      
-      if (error?.message) {
-        if (error.message.includes('Network') || error.message.includes('fetch')) {
-          errorMessage = "Network error. Please check your internet connection.";
-        } else if (error.message.includes('timeout')) {
-          errorMessage = "Request timed out. Please try again.";
-        } else {
-          errorMessage = error.message;
-        }
-      }
-      
-      Alert.alert("Error", errorMessage, [{ text: "OK" }]);
+      console.warn("Expense categories unavailable:", error?.message || error);
+      setCategories([]);
     } finally {
       setIsLoadingCategories(false);
     }
@@ -187,45 +163,21 @@ export default function CreateExpenseScreen() {
   const fetchProjects = async () => {
     const adminId = employee.adminId;
     if (!adminId) {
-      Alert.alert(
-        "Error",
-        "Unable to load projects. Please try again later.",
-        [{ text: "OK" }]
-      );
+      setProjects([]);
       return;
     }
 
     setIsLoadingProjects(true);
     try {
       const response = await apiService.getExpenseProjects(adminId);
-      if (response.status === 200 && response.data) {
+      if (response.status === 200 && Array.isArray(response.data)) {
         setProjects(response.data);
-        if (response.data.length === 0) {
-          Alert.alert(
-            "No Projects",
-            "No expense projects available. Please contact your administrator.",
-            [{ text: "OK" }]
-          );
-        }
       } else {
-        const errorMsg = response.message || "Failed to load projects";
-        Alert.alert("Error", errorMsg, [{ text: "OK" }]);
+        setProjects([]);
       }
     } catch (error: any) {
-      console.error('❌ Error fetching projects:', error);
-      let errorMessage = "Failed to load projects. Please check your internet connection and try again.";
-      
-      if (error?.message) {
-        if (error.message.includes('Network') || error.message.includes('fetch')) {
-          errorMessage = "Network error. Please check your internet connection.";
-        } else if (error.message.includes('timeout')) {
-          errorMessage = "Request timed out. Please try again.";
-        } else {
-          errorMessage = error.message;
-        }
-      }
-      
-      Alert.alert("Error", errorMessage, [{ text: "OK" }]);
+      console.warn("Expense projects unavailable (optional):", error?.message || error);
+      setProjects([]);
     } finally {
       setIsLoadingProjects(false);
     }
@@ -479,64 +431,6 @@ export default function CreateExpenseScreen() {
 
         <Spacer height={Spacing.md} />
 
-        {/* Category Selection */}
-        <View>
-          <ThemedText type="small" style={{ color: theme.textMuted, marginBottom: Spacing.xs }}>
-            Category
-          </ThemedText>
-          <Pressable
-            onPress={() => setShowCategoryModal(true)}
-            style={({ pressed }) => [
-              styles.selectButton,
-              { 
-                backgroundColor: theme.backgroundDefault,
-                borderColor: theme.border,
-                opacity: pressed ? 0.9 : 1 
-              }
-            ]}
-          >
-            <ThemedText style={{ flex: 1 }}>
-              {selectedCategory ? selectedCategory.name : "Select Category"}
-            </ThemedText>
-            {isLoadingCategories ? (
-              <ActivityIndicator size="small" color={theme.textMuted} />
-            ) : (
-              <Feather name="chevron-down" size={20} color={theme.textMuted} />
-            )}
-          </Pressable>
-        </View>
-
-        <Spacer height={Spacing.lg} />
-
-        {/* Project Selection */}
-        <View>
-          <ThemedText type="small" style={{ color: theme.textMuted, marginBottom: Spacing.xs }}>
-            Project (optional)
-          </ThemedText>
-          <Pressable
-            onPress={() => setShowProjectModal(true)}
-            style={({ pressed }) => [
-              styles.selectButton,
-              { 
-                backgroundColor: theme.backgroundDefault,
-                borderColor: theme.border,
-                opacity: pressed ? 0.9 : 1 
-              }
-            ]}
-          >
-            <ThemedText style={{ flex: 1 }}>
-              {selectedProject ? selectedProject.name : "Select Project"}
-            </ThemedText>
-            {isLoadingProjects ? (
-              <ActivityIndicator size="small" color={theme.textMuted} />
-            ) : (
-              <Feather name="chevron-down" size={20} color={theme.textMuted} />
-            )}
-          </Pressable>
-        </View>
-
-        <Spacer height={Spacing.lg} />
-
         {/* Title */}
         <View>
           <ThemedText type="small" style={{ color: theme.textMuted, marginBottom: Spacing.xs }}>
@@ -591,6 +485,69 @@ export default function CreateExpenseScreen() {
             }}
             keyboardType="numeric"
           />
+        </View>
+
+        <Spacer height={Spacing.lg} />
+
+        {/* Category & Project — center section */}
+        <View style={styles.pickerSection}>
+          <ThemedText type="body" style={styles.pickerSectionTitle}>
+            Category & Project
+          </ThemedText>
+
+          <View>
+            <ThemedText type="small" style={{ color: theme.textMuted, marginBottom: Spacing.xs }}>
+              Category
+            </ThemedText>
+            <Pressable
+              onPress={() => setShowCategoryModal(true)}
+              style={({ pressed }) => [
+                styles.selectButton,
+                {
+                  backgroundColor: theme.backgroundDefault,
+                  borderColor: theme.border,
+                  opacity: pressed ? 0.9 : 1,
+                },
+              ]}
+            >
+              <ThemedText style={{ flex: 1 }}>
+                {selectedCategory ? selectedCategory.name : "Select Category"}
+              </ThemedText>
+              {isLoadingCategories ? (
+                <ActivityIndicator size="small" color={theme.textMuted} />
+              ) : (
+                <Feather name="chevron-down" size={20} color={theme.textMuted} />
+              )}
+            </Pressable>
+          </View>
+
+          <Spacer height={Spacing.md} />
+
+          <View>
+            <ThemedText type="small" style={{ color: theme.textMuted, marginBottom: Spacing.xs }}>
+              Project (optional — skip if none)
+            </ThemedText>
+            <Pressable
+              onPress={() => setShowProjectModal(true)}
+              style={({ pressed }) => [
+                styles.selectButton,
+                {
+                  backgroundColor: theme.backgroundDefault,
+                  borderColor: theme.border,
+                  opacity: pressed ? 0.9 : 1,
+                },
+              ]}
+            >
+              <ThemedText style={{ flex: 1 }}>
+                {selectedProject ? selectedProject.name : "Select Project"}
+              </ThemedText>
+              {isLoadingProjects ? (
+                <ActivityIndicator size="small" color={theme.textMuted} />
+              ) : (
+                <Feather name="chevron-down" size={20} color={theme.textMuted} />
+              )}
+            </Pressable>
+          </View>
         </View>
 
         <Spacer height={Spacing.lg} />
@@ -752,11 +709,17 @@ export default function CreateExpenseScreen() {
       <Modal
         visible={showCategoryModal}
         transparent
-        animationType="slide"
+        animationType="fade"
         onRequestClose={() => setShowCategoryModal(false)}
       >
-        <View style={styles.modalOverlay}>
-          <View style={[styles.modalContent, { backgroundColor: theme.background }]}>
+        <Pressable
+          style={styles.modalOverlayCenter}
+          onPress={() => setShowCategoryModal(false)}
+        >
+          <Pressable
+            style={[styles.modalContentCenter, { backgroundColor: theme.background }]}
+            onPress={(e) => e.stopPropagation()}
+          >
             <View style={styles.modalHeader}>
               <ThemedText type="h3">Select Category</ThemedText>
               <Pressable onPress={() => setShowCategoryModal(false)}>
@@ -793,19 +756,25 @@ export default function CreateExpenseScreen() {
                 ))
               )}
             </ScrollView>
-          </View>
-        </View>
+          </Pressable>
+        </Pressable>
       </Modal>
 
       {/* Project Selection Modal */}
       <Modal
         visible={showProjectModal}
         transparent
-        animationType="slide"
+        animationType="fade"
         onRequestClose={() => setShowProjectModal(false)}
       >
-        <View style={styles.modalOverlay}>
-          <View style={[styles.modalContent, { backgroundColor: theme.background }]}>
+        <Pressable
+          style={styles.modalOverlayCenter}
+          onPress={() => setShowProjectModal(false)}
+        >
+          <Pressable
+            style={[styles.modalContentCenter, { backgroundColor: theme.background }]}
+            onPress={(e) => e.stopPropagation()}
+          >
             <View style={styles.modalHeader}>
               <ThemedText type="h3">Select Project</ThemedText>
               <Pressable onPress={() => setShowProjectModal(false)}>
@@ -842,8 +811,8 @@ export default function CreateExpenseScreen() {
                 ))
               )}
             </ScrollView>
-          </View>
-        </View>
+          </Pressable>
+        </Pressable>
       </Modal>
     </ScreenScrollView>
   );
@@ -858,6 +827,22 @@ const styles = StyleSheet.create({
     padding: Spacing.md,
     borderRadius: BorderRadius.md,
     marginBottom: Spacing.md,
+  },
+  pickerSection: {
+    width: "100%",
+    alignSelf: "center",
+    paddingVertical: Spacing.lg,
+    paddingHorizontal: Spacing.md,
+    borderRadius: BorderRadius.lg,
+    backgroundColor: "#F8FAFC",
+    borderWidth: 1,
+    borderColor: "#E2E8F0",
+    gap: Spacing.sm,
+  },
+  pickerSectionTitle: {
+    textAlign: "center",
+    fontWeight: "600",
+    marginBottom: Spacing.sm,
   },
   selectButton: {
     flexDirection: "row",
@@ -885,16 +870,20 @@ const styles = StyleSheet.create({
     borderRadius: BorderRadius.full,
     gap: Spacing.sm,
   },
-  modalOverlay: {
+  modalOverlayCenter: {
     flex: 1,
     backgroundColor: "rgba(0, 0, 0, 0.5)",
-    justifyContent: "flex-end",
+    justifyContent: "center",
+    alignItems: "center",
+    padding: Spacing.lg,
   },
-  modalContent: {
-    borderTopLeftRadius: BorderRadius["2xl"],
-    borderTopRightRadius: BorderRadius["2xl"],
+  modalContentCenter: {
+    width: "100%",
+    maxWidth: 400,
+    borderRadius: BorderRadius["2xl"],
     maxHeight: "70%",
     paddingBottom: Spacing["2xl"],
+    overflow: "hidden",
   },
   modalHeader: {
     flexDirection: "row",
@@ -905,7 +894,7 @@ const styles = StyleSheet.create({
     borderBottomColor: "rgba(128, 128, 128, 0.2)",
   },
   modalList: {
-    flex: 1,
+    maxHeight: 320,
   },
   modalItem: {
     flexDirection: "row",

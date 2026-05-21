@@ -23,11 +23,12 @@ import { HomeStackParamList } from "@/navigation/HomeStackNavigator";
 import { MainTabParamList } from "@/navigation/MainTabNavigator";
 import Spacer from "@/components/Spacer";
 import { validateFaceImage } from "@/utils/faceDetection";
-import { apiService, type PunchCountryMeta } from "@/services/api";
+import { apiService, parseEmployeeTaskList, type PunchCountryMeta } from "@/services/api";
 import { getCurrentMonthDates } from "@/utils/dateHelpers";
 import { formatCountryLabel } from "@/utils/punchLocationTime";
 import { resolvePunchLocation } from "@/utils/resolvePunchLocation";
 import { ThreeSCheckInModal, type ThreeSCheckInPayload } from "@/components/ThreeSCheckInModal";
+import { compressFromCameraAsset, compressImageForUpload } from "@/utils/compressImage";
 
 type HomeScreenNavigationProp = CompositeNavigationProp<
   NativeStackNavigationProp<HomeStackParamList, "Home">,
@@ -229,13 +230,10 @@ export default function HomeScreen() {
     if (!adminId || !userId) return;
 
     try {
-      const { from, to } = getCurrentMonthDates();
-      // Fetch pending tasks count for current month
-      const tasksResponse = await apiService.getMyTasks(adminId, userId, from, to);
-      if (tasksResponse.status === 200 && tasksResponse.data) {
-        const pendingTasks = tasksResponse.data.filter(
-          (task: any) => task.status === 'pending' || task.status === 'in-progress' || task.status === 'in_progress'
-        );
+      const tasksResponse = await apiService.getMyTasks(adminId, userId);
+      if (tasksResponse.status === 200) {
+        const taskList = parseEmployeeTaskList(tasksResponse.data);
+        const pendingTasks = taskList.filter((task) => task.status === "pending");
         setPendingTasksCount(pendingTasks.length);
       }
     } catch (error) {
@@ -560,7 +558,7 @@ export default function HomeScreen() {
       mediaTypes: ["images"],
       allowsEditing: false,
       aspect: [4, 3],
-      quality: 0.65,
+      quality: 0.2,
       base64: true,
       cameraType: useFrontCamera ? ImagePicker.CameraType.front : ImagePicker.CameraType.back,
       exif: false,
@@ -568,11 +566,11 @@ export default function HomeScreen() {
 
     const location = await getCurrentLocation().catch(() => null);
 
-    if (!result.canceled && result.assets?.[0]?.base64) {
-      return {
-        image: `data:image/png;base64,${result.assets[0].base64}`,
-        location: location || undefined,
-      };
+    if (!result.canceled && result.assets?.[0]) {
+      const image = await compressFromCameraAsset(result.assets[0]);
+      if (image) {
+        return { image, location: location || undefined };
+      }
     }
     return { image: null };
   };
@@ -606,24 +604,20 @@ export default function HomeScreen() {
       // Location will be fetched separately if needed
       const result = await ImagePicker.launchCameraAsync({
         mediaTypes: ['images'],
-        allowsEditing: false, // Removed editing for faster capture
-        aspect: [1, 1], // Square aspect for faster processing
-        quality: 0.6, // Further reduced quality for faster processing (was 0.7)
+        allowsEditing: false,
+        aspect: [1, 1],
+        quality: 0.2,
         base64: true,
-        cameraType: ImagePicker.CameraType.front, // Directly use front camera
-        exif: false, // Disable EXIF data for faster processing
+        cameraType: ImagePicker.CameraType.front,
+        exif: false,
       });
 
-      // Fetch location after camera opens (non-blocking)
       const location = await getCurrentLocation().catch(() => null);
 
-      if (!result.canceled && result.assets && result.assets.length > 0) {
-        const asset = result.assets[0];
-        if (asset.base64) {
-          return {
-            image: `data:image/png;base64,${asset.base64}`,
-            location: location || undefined
-          };
+      if (!result.canceled && result.assets?.[0]) {
+        const image = await compressFromCameraAsset(result.assets[0]);
+        if (image) {
+          return { image, location: location || undefined };
         }
       }
       return { image: null };
@@ -797,14 +791,18 @@ export default function HomeScreen() {
 
           const capturePhoto = () => {
             if (video.readyState === video.HAVE_ENOUGH_DATA) {
-              canvas.width = video.videoWidth;
-              canvas.height = video.videoHeight;
+              const maxW = 1024;
+              const scale = Math.min(1, maxW / video.videoWidth);
+              canvas.width = Math.max(1, Math.round(video.videoWidth * scale));
+              canvas.height = Math.max(1, Math.round(video.videoHeight * scale));
 
               if (ctx) {
                 ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-                const base64Image = canvas.toDataURL('image/png', 0.8);
+                const raw = canvas.toDataURL("image/jpeg", 0.65);
                 cleanup();
-                resolve({ image: base64Image, location: locationData || undefined });
+                void compressImageForUpload(raw).then((base64Image) => {
+                  resolve({ image: base64Image, location: locationData || undefined });
+                });
               } else {
                 cleanup();
                 resolve({ image: null });
@@ -889,7 +887,7 @@ export default function HomeScreen() {
     });
 
     const result = await checkIn(
-      [selfieImage],
+      threeSData ? [selfieImage] : undefined,
       roundedLat,
       roundedLng,
       punchCountryMeta,
@@ -1010,7 +1008,7 @@ export default function HomeScreen() {
         await submitCheckIn(captureResult.image, null, captureResult);
       } else {
         // Check Out with selfie and location
-        const result = await checkOut([captureResult.image], roundedLat, roundedLng, punchCountryMeta);
+        const result = await checkOut(undefined, roundedLat, roundedLng, punchCountryMeta);
         if (!result.success) {
           setPunchError(result.error || "Check-out failed. Please try again.");
           Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);

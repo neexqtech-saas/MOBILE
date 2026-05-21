@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { View, StyleSheet, TextInput, Pressable, Alert, Platform, ActivityIndicator, Modal, ScrollView } from "react-native";
+import { View, StyleSheet, TextInput, Pressable, Alert, Platform, ActivityIndicator, Modal } from "react-native";
 import { Feather } from "@expo/vector-icons";
 import { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { useNavigation, useRoute, RouteProp } from "@react-navigation/native";
@@ -27,6 +27,21 @@ const MONTHS = [
   "July", "August", "September", "October", "November", "December"
 ];
 
+/** Parse YYYY-MM-DD as local calendar date (avoids UTC timezone bugs). */
+function parseYmd(ymd: string): Date {
+  const [y, m, d] = ymd.split("-").map(Number);
+  return new Date(y, m - 1, d);
+}
+
+function compareYmd(a: string, b: string): number {
+  return parseYmd(a).getTime() - parseYmd(b).getTime();
+}
+
+function todayYmd(): string {
+  const t = new Date();
+  return `${t.getFullYear()}-${String(t.getMonth() + 1).padStart(2, "0")}-${String(t.getDate()).padStart(2, "0")}`;
+}
+
 export default function ApplyLeaveScreen() {
   const navigation = useNavigation<ApplyLeaveScreenNavigationProp>();
   const route = useRoute<ApplyLeaveScreenRouteProp>();
@@ -50,14 +65,20 @@ export default function ApplyLeaveScreen() {
   
   // Ensure only one calendar opens at a time
   const openFromDatePicker = () => {
-    setShowToDatePicker(false); // Close to date picker if open
-    setCalendarMonth(fromDate ? new Date(fromDate) : new Date());
+    setError("");
+    setShowToDatePicker(false);
+    setCalendarMonth(fromDate ? parseYmd(fromDate) : new Date());
     setShowFromDatePicker(true);
   };
-  
+
   const openToDatePicker = () => {
-    setShowFromDatePicker(false); // Close from date picker if open
-    setCalendarMonth(toDate ? new Date(toDate) : new Date());
+    if (!fromDate) {
+      setError("Please select From Date first");
+      return;
+    }
+    setError("");
+    setShowFromDatePicker(false);
+    setCalendarMonth(toDate ? parseYmd(toDate) : parseYmd(fromDate));
     setShowToDatePicker(true);
   };
 
@@ -91,13 +112,12 @@ export default function ApplyLeaveScreen() {
       setFromDate(dateStr);
       setShowFromDatePicker(false);
       // If to date is before from date, clear it
-      if (toDate && new Date(toDate) < new Date(dateStr)) {
+      if (toDate && compareYmd(toDate, dateStr) < 0) {
         setToDate("");
       }
     } else {
-      // Validate to date is after or equal to from date
-      if (fromDate && new Date(dateStr) < new Date(fromDate)) {
-        setError("To date must be after or equal to from date");
+      if (fromDate && compareYmd(dateStr, fromDate) < 0) {
+        setError("To date must be on or after From Date");
         return;
       }
       setToDate(dateStr);
@@ -109,15 +129,9 @@ export default function ApplyLeaveScreen() {
   // Format date for display
   const formatDisplayDate = (dateStr: string): string => {
     if (!dateStr) return "";
-    try {
-      const date = new Date(dateStr);
-      const day = String(date.getDate()).padStart(2, '0');
-      const month = String(date.getMonth() + 1).padStart(2, '0');
-      const year = date.getFullYear();
-      return `${day}/${month}/${year}`;
-    } catch {
-      return dateStr;
-    }
+    const parts = dateStr.split("-");
+    if (parts.length !== 3) return dateStr;
+    return `${parts[2]}/${parts[1]}/${parts[0]}`;
   };
 
   const handleSubmit = async () => {
@@ -151,8 +165,8 @@ export default function ApplyLeaveScreen() {
     }
 
     // Validate to date is after or equal to from date
-    if (new Date(toDate) < new Date(fromDate)) {
-      setError("To date must be after or equal to from date");
+    if (compareYmd(toDate, fromDate) < 0) {
+      setError("To date must be on or after From Date");
       return;
     }
 
@@ -285,20 +299,19 @@ export default function ApplyLeaveScreen() {
     }
 
     const dateStr = `${calendarMonth.getFullYear()}-${String(calendarMonth.getMonth() + 1).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
-    const dateObj = new Date(dateStr);
     const isSelected = isFromDate ? fromDate === dateStr : toDate === dateStr;
-    const isToday = 
+    const isToday =
       new Date().getDate() === day &&
       new Date().getMonth() === calendarMonth.getMonth() &&
       new Date().getFullYear() === calendarMonth.getFullYear();
-    
-    // Check if date is in range (for to date picker)
-    const isInRange = !isFromDate && fromDate && toDate === "" && 
-      new Date(dateStr) >= new Date(fromDate);
-    
-    // Check if date is disabled (past dates or invalid range)
-    const isPast = dateObj < new Date(new Date().setHours(0, 0, 0, 0));
-    const isDisabled = isPast || (!isFromDate && fromDate && new Date(dateStr) < new Date(fromDate));
+
+    const isInRange =
+      !isFromDate && !!fromDate && !toDate && compareYmd(dateStr, fromDate) >= 0;
+
+    const isPast = compareYmd(dateStr, todayYmd()) < 0;
+    const isBeforeFrom =
+      !isFromDate && !!fromDate && compareYmd(dateStr, fromDate) < 0;
+    const isDisabled = isPast || isBeforeFrom;
 
     return (
       <Pressable
@@ -386,10 +399,9 @@ export default function ApplyLeaveScreen() {
             <View key={day} style={styles.weekdayHeader}>
               <ThemedText style={styles.weekdayText}>{day}</ThemedText>
             </View>
-        ))}
-      </View>
+          ))}
+        </View>
 
-        {/* Calendar Grid */}
         <View style={styles.calendarGrid}>
           {days.map((day, index) => renderCalendarDay(day, index, isFromDate))}
         </View>
@@ -428,74 +440,66 @@ export default function ApplyLeaveScreen() {
         </View>
       ) : null}
 
-      <View style={styles.dateRow}>
-        <View style={styles.dateField}>
-          <ThemedText type="small" style={styles.label}>
-              From Date
+        <View style={styles.dateSection}>
+          <ThemedText type="body" style={styles.dateSectionTitle}>
+            Select leave dates
           </ThemedText>
-            <Pressable
-              onPress={openFromDatePicker}
-              style={({ pressed }) => [
-                styles.dateInputWrapper,
-                pressed && styles.dateInputWrapperPressed,
-              ]}
-            >
-              <Feather
-                name="calendar"
-                size={20}
-                color={Colors.dark.primary}
-                style={styles.inputIcon}
-              />
-              <TextInput
-                style={[
-                  styles.dateInput,
-                  {
-                    backgroundColor: "#FFFFFF",
-                    color: theme.text,
-                    borderColor: "#DBEAFE",
-                  },
+          <View style={styles.dateRow}>
+            <View style={styles.dateField}>
+              <ThemedText type="small" style={styles.label}>
+                From Date
+              </ThemedText>
+              <Pressable
+                onPress={openFromDatePicker}
+                style={({ pressed }) => [
+                  styles.dateInputWrapper,
+                  pressed && styles.dateInputWrapperPressed,
                 ]}
-                value={formatDisplayDate(fromDate)}
-                placeholder="Select from date"
-                placeholderTextColor={theme.textMuted}
-                editable={false}
-                pointerEvents="none"
-              />
-            </Pressable>
-          </View>
-          <View style={styles.dateField}>
-            <ThemedText type="small" style={styles.label}>
-              To Date
-            </ThemedText>
-            <Pressable
-              onPress={openToDatePicker}
-              style={({ pressed }) => [
-                styles.dateInputWrapper,
-                pressed && styles.dateInputWrapperPressed,
-              ]}
-            >
-              <Feather
-                name="calendar"
-                size={20}
-                color={Colors.dark.primary}
-                style={styles.inputIcon}
-              />
-              <TextInput
-                style={[
-                  styles.dateInput,
-                  {
-                    backgroundColor: "#FFFFFF",
-                    color: theme.text,
-                    borderColor: "#DBEAFE",
-                  },
+              >
+                <Feather
+                  name="calendar"
+                  size={20}
+                  color={Colors.dark.primary}
+                  style={styles.inputIcon}
+                />
+                <ThemedText
+                  style={[
+                    styles.dateInputText,
+                    { color: fromDate ? theme.text : theme.textMuted },
+                  ]}
+                >
+                  {fromDate ? formatDisplayDate(fromDate) : "Select from date"}
+                </ThemedText>
+              </Pressable>
+            </View>
+            <View style={styles.dateField}>
+              <ThemedText type="small" style={styles.label}>
+                To Date
+              </ThemedText>
+              <Pressable
+                onPress={openToDatePicker}
+                style={({ pressed }) => [
+                  styles.dateInputWrapper,
+                  pressed && styles.dateInputWrapperPressed,
+                  !fromDate && styles.dateInputWrapperDisabled,
                 ]}
-                value={formatDisplayDate(toDate)}
-                placeholder="Select to date"
-                placeholderTextColor={theme.textMuted}
-                editable={false}
-                pointerEvents="none"
-              />
-            </Pressable>
+              >
+                <Feather
+                  name="calendar"
+                  size={20}
+                  color={fromDate ? Colors.dark.primary : theme.textMuted}
+                  style={styles.inputIcon}
+                />
+                <ThemedText
+                  style={[
+                    styles.dateInputText,
+                    { color: toDate ? theme.text : theme.textMuted },
+                  ]}
+                >
+                  {toDate ? formatDisplayDate(toDate) : "Select to date"}
+                </ThemedText>
+              </Pressable>
+            </View>
           </View>
         </View>
 
@@ -664,84 +668,82 @@ export default function ApplyLeaveScreen() {
         <Spacer height={Spacing["4xl"]} />
       </ScreenScrollView>
 
-      {/* Calendar Picker Modal - From Date */}
       <Modal
         visible={showFromDatePicker}
-        transparent={true}
-        animationType="slide"
+        transparent
+        animationType="fade"
         onRequestClose={() => setShowFromDatePicker(false)}
       >
-        <Pressable 
-          style={styles.modalOverlay}
-          onPress={() => setShowFromDatePicker(false)}
-        >
-          <Pressable 
-            style={[styles.modalContent, { backgroundColor: theme.backgroundDefault || "#FFFFFF" }]}
-            onPress={(e) => e.stopPropagation()}
+        <View style={styles.modalOverlayCenter}>
+          <Pressable
+            style={StyleSheet.absoluteFill}
+            onPress={() => setShowFromDatePicker(false)}
+          />
+          <View
+            style={[
+              styles.modalContentCenter,
+              { backgroundColor: theme.backgroundDefault || "#FFFFFF" },
+            ]}
           >
             <View style={styles.modalHeader}>
               <View style={styles.modalHeaderLeft}>
                 <Feather name="calendar" size={24} color={Colors.dark.primary} />
-                <ThemedText type="h4" style={[styles.modalTitle, { color: theme.text || "#424242" }]}>
+                <ThemedText
+                  type="h4"
+                  style={[styles.modalTitle, { color: theme.text || "#424242" }]}
+                >
                   Select From Date
                 </ThemedText>
               </View>
-              <Pressable 
+              <Pressable
                 onPress={() => setShowFromDatePicker(false)}
                 style={styles.closeButton}
               >
                 <Feather name="x" size={24} color={theme.textMuted || "#757575"} />
               </Pressable>
             </View>
-            <ScrollView 
-              style={styles.modalBody} 
-              showsVerticalScrollIndicator={false}
-              contentContainerStyle={styles.modalBodyContent}
-            >
-              {renderCalendar(true)}
-            </ScrollView>
-          </Pressable>
-        </Pressable>
+            <View style={styles.modalBodyContent}>{renderCalendar(true)}</View>
+          </View>
+        </View>
       </Modal>
 
-      {/* Calendar Picker Modal - To Date */}
       <Modal
         visible={showToDatePicker}
-        transparent={true}
-        animationType="slide"
+        transparent
+        animationType="fade"
         onRequestClose={() => setShowToDatePicker(false)}
       >
-        <Pressable 
-          style={styles.modalOverlay}
-          onPress={() => setShowToDatePicker(false)}
-        >
-          <Pressable 
-            style={[styles.modalContent, { backgroundColor: theme.backgroundDefault || "#FFFFFF" }]}
-            onPress={(e) => e.stopPropagation()}
+        <View style={styles.modalOverlayCenter}>
+          <Pressable
+            style={StyleSheet.absoluteFill}
+            onPress={() => setShowToDatePicker(false)}
+          />
+          <View
+            style={[
+              styles.modalContentCenter,
+              { backgroundColor: theme.backgroundDefault || "#FFFFFF" },
+            ]}
           >
             <View style={styles.modalHeader}>
               <View style={styles.modalHeaderLeft}>
                 <Feather name="calendar" size={24} color={Colors.dark.primary} />
-                <ThemedText type="h4" style={[styles.modalTitle, { color: theme.text || "#424242" }]}>
+                <ThemedText
+                  type="h4"
+                  style={[styles.modalTitle, { color: theme.text || "#424242" }]}
+                >
                   Select To Date
                 </ThemedText>
               </View>
-              <Pressable 
+              <Pressable
                 onPress={() => setShowToDatePicker(false)}
                 style={styles.closeButton}
               >
                 <Feather name="x" size={24} color={theme.textMuted || "#757575"} />
               </Pressable>
             </View>
-            <ScrollView 
-              style={styles.modalBody} 
-              showsVerticalScrollIndicator={false}
-              contentContainerStyle={styles.modalBodyContent}
-            >
-              {renderCalendar(false)}
-            </ScrollView>
-          </Pressable>
-        </Pressable>
+            <View style={styles.modalBodyContent}>{renderCalendar(false)}</View>
+          </View>
+        </View>
       </Modal>
     </>
   );
@@ -794,6 +796,22 @@ const styles = StyleSheet.create({
     lineHeight: 20,
     marginBottom: 4,
   },
+  dateSection: {
+    width: "100%",
+    alignSelf: "center",
+    paddingVertical: Spacing.lg,
+    paddingHorizontal: Spacing.md,
+    borderRadius: BorderRadius.lg,
+    backgroundColor: "#F8FAFC",
+    borderWidth: 1,
+    borderColor: "#DBEAFE",
+  },
+  dateSectionTitle: {
+    textAlign: "center",
+    fontWeight: "600",
+    color: "#424242",
+    marginBottom: Spacing.md,
+  },
   dateRow: {
     flexDirection: "row",
     gap: Spacing.md,
@@ -845,10 +863,12 @@ const styles = StyleSheet.create({
     left: Spacing.lg,
     zIndex: 1,
   },
-  dateInput: {
+  dateInputText: {
     flex: 1,
-    height: "100%",
     fontSize: Typography.body.fontSize,
+  },
+  dateInputWrapperDisabled: {
+    opacity: 0.65,
   },
   textArea: {
     height: 120,
@@ -895,22 +915,27 @@ const styles = StyleSheet.create({
     fontWeight: "600",
     color: "#FFFFFF",
   },
-  modalOverlay: {
+  modalOverlayCenter: {
     flex: 1,
     backgroundColor: "rgba(0, 0, 0, 0.5)",
-    justifyContent: "flex-end",
+    justifyContent: "center",
+    alignItems: "center",
+    padding: Spacing.lg,
   },
-  modalContent: {
-    borderTopLeftRadius: BorderRadius.xl,
-    borderTopRightRadius: BorderRadius.xl,
-    maxHeight: "85%",
-    paddingBottom: Spacing.xl,
+  modalContentCenter: {
+    width: "100%",
+    maxWidth: 400,
+    borderRadius: BorderRadius.xl,
+    zIndex: 1,
+    elevation: 10,
+    paddingBottom: Spacing.md,
+    overflow: "hidden",
     ...Platform.select({
       ios: {
         shadowColor: "#000",
-        shadowOffset: { width: 0, height: -2 },
-        shadowOpacity: 0.1,
-        shadowRadius: 8,
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.15,
+        shadowRadius: 12,
       },
       android: {
         elevation: 8,
@@ -939,12 +964,9 @@ const styles = StyleSheet.create({
     padding: Spacing.xs,
     borderRadius: BorderRadius.md,
   },
-  modalBody: {
-    flex: 1,
-  },
   modalBodyContent: {
     padding: Spacing.lg,
-    paddingBottom: Spacing.xl,
+    paddingBottom: Spacing.lg,
   },
   calendarContainer: {
     paddingVertical: Spacing.md,

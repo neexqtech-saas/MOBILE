@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import { apiService, OrganizationSettings } from "@/services/api";
+import { apiService, OrganizationSettings, parseEmployeeTaskList } from "@/services/api";
 import { storageService } from "@/services/storage";
 import type {
   AttendanceHistoryItem,
@@ -9,6 +9,11 @@ import type {
   PunchCountryMeta,
 } from "@/services/api";
 import * as ImagePicker from "expo-image-picker";
+import {
+  compressFromCameraAsset,
+  compressImageForUpload,
+  prepareProfilePhotoBase64,
+} from "@/utils/compressImage";
 import { Platform, Alert } from "react-native";
 import { validateFaceImage } from "@/utils/faceDetection";
 import * as Notifications from "expo-notifications";
@@ -584,7 +589,7 @@ export const useHRMSStore = create<HRMSState>((set, get) => ({
 
           // Use admin_id if available, otherwise use user_id as fallback
           // For some users, adminId might be their own userId
-          const adminId = userData.admin_id || userData.user_id;
+          const adminId = userData.admin_id || undefined;
 
           // Extract first assigned project if available
           let assignedProject: AssignedProject | undefined;
@@ -812,7 +817,7 @@ export const useHRMSStore = create<HRMSState>((set, get) => ({
             });
 
             // Use admin_id if available, otherwise use user_id as fallback
-            const adminId = userData.admin_id || userData.user_id;
+            const adminId = userData.admin_id || undefined;
 
             // Extract first assigned project if available
             let assignedProject: AssignedProject | undefined;
@@ -1681,21 +1686,53 @@ export const useHRMSStore = create<HRMSState>((set, get) => ({
   },
 
   fetchTasks: async (fromDate?: string, toDate?: string) => {
-    const state = get();
-    const adminId = state.employee.adminId;
-    const userId = state.employee.id;
+    let state = get();
+    let adminId = state.employee.adminId;
+    let userId = state.employee.id;
 
-    if (!adminId || !userId) {
-      return { success: false, error: "Admin ID or User ID not found. Please login again." };
+    if (!userId) {
+      return { success: false, error: "User ID not found. Please login again." };
+    }
+
+    // Refresh admin_id from session if missing (required for task API path)
+    if (!adminId) {
+      try {
+        const sessionInfo = await apiService.getSessionInfo();
+        if (sessionInfo.status === 200 && sessionInfo.data?.admin_id) {
+          adminId = sessionInfo.data.admin_id;
+          set({
+            employee: {
+              ...get().employee,
+              adminId,
+            },
+          });
+        }
+      } catch (e) {
+        console.warn("Could not refresh admin_id from session:", e);
+      }
+    }
+
+    if (!adminId) {
+      return {
+        success: false,
+        error: "No admin assigned to your account. Please contact HR/admin.",
+      };
     }
 
     try {
-      // Fetch tasks with date filters if provided
       const response = await apiService.getMyTasks(adminId, userId, fromDate, toDate);
 
-      if (response.data) {
-        // Convert API response to Task format
-        const tasks: Task[] = response.data.map((taskAPI: TaskAPI) => {
+      const taskList = parseEmployeeTaskList(response.data);
+      const pendingCount = taskList.filter((t) => t.status === "pending").length;
+      console.log(`📋 Tasks loaded: ${taskList.length} (${pendingCount} pending)`, {
+        adminId,
+        userId,
+        fromDate,
+        toDate,
+      });
+
+      if (response.status === 200) {
+        const tasks: Task[] = taskList.map((taskAPI: TaskAPI) => {
           // Map priority from API to app format
           let priority: "low" | "medium" | "high" = "medium";
           if (taskAPI.priority === "urgent") {
@@ -1743,7 +1780,7 @@ export const useHRMSStore = create<HRMSState>((set, get) => ({
         return { success: true };
       }
 
-      return { success: false, error: "No tasks found." };
+      return { success: false, error: response.message || "Failed to load tasks." };
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Failed to fetch tasks. Please try again.';
       console.error('Error fetching tasks:', error);
@@ -2048,6 +2085,7 @@ export const useHRMSStore = create<HRMSState>((set, get) => ({
       console.log('📸 Opening camera directly for selfie...');
 
       let base64Image: string | null = null;
+      let capturedUri: string | null = null;
 
       // For web platform, use HTML5 getUserMedia API (same as check-in)
       if (Platform.OS === 'web') {
@@ -2159,12 +2197,14 @@ export const useHRMSStore = create<HRMSState>((set, get) => ({
 
               const capturePhoto = () => {
                 if (video.readyState === video.HAVE_ENOUGH_DATA && ctx) {
-                  canvas.width = video.videoWidth;
-                  canvas.height = video.videoHeight;
+                  const maxW = 1024;
+                  const scale = Math.min(1, maxW / video.videoWidth);
+                  canvas.width = Math.max(1, Math.round(video.videoWidth * scale));
+                  canvas.height = Math.max(1, Math.round(video.videoHeight * scale));
                   ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-                  const imageData = canvas.toDataURL('image/png', 0.8);
+                  const raw = canvas.toDataURL("image/jpeg", 0.65);
                   cleanup();
-                  resolve(imageData);
+                  void compressImageForUpload(raw).then(resolve);
                 } else {
                   setTimeout(capturePhoto, 100);
                 }
@@ -2206,22 +2246,25 @@ export const useHRMSStore = create<HRMSState>((set, get) => ({
         const result = await ImagePicker.launchCameraAsync({
           mediaTypes: ['images'],
           allowsEditing: true,
-          aspect: [4, 3],
-          quality: 0.8,
+          aspect: [1, 1],
+          quality: 0.2,
           base64: true,
         });
 
-        if (result.canceled || !result.assets || result.assets.length === 0) {
+        if (result.canceled || !result.assets?.[0]) {
           console.log('📸 Photo capture cancelled by user');
           return { success: false, error: "Photo capture cancelled" };
         }
 
         const asset = result.assets[0];
-        if (!asset.base64) {
+        capturedUri = asset.uri ?? null;
+        const previewForFace =
+          (await compressFromCameraAsset(asset)) ??
+          (asset.base64 ? `data:image/jpeg;base64,${asset.base64}` : null);
+        if (!previewForFace) {
           return { success: false, error: "Failed to capture photo" };
         }
-
-        base64Image = `data:image/png;base64,${asset.base64}`;
+        base64Image = previewForFace;
       }
 
       if (!base64Image) {
@@ -2241,19 +2284,12 @@ export const useHRMSStore = create<HRMSState>((set, get) => ({
       }
       console.log('✅ Face detected successfully');
 
-      // Strip data URI prefix if present (backend expects just base64 string)
-      let base64String = base64Image;
-      if (base64Image.startsWith('data:image')) {
-        // Remove "data:image/png;base64," or similar prefix
-        const base64Match = base64Image.match(/^data:image\/[a-z]+;base64,(.+)$/);
-        if (base64Match && base64Match[1]) {
-          base64String = base64Match[1];
-        }
-      }
-
-      // Upload to backend silently (like check-in)
-      console.log('📤 Uploading profile photo...');
-      const uploadResult = await get().uploadProfilePhoto(base64String);
+      const assetForUpload = capturedUri
+        ? { uri: capturedUri, base64: null as string | null }
+        : { uri: undefined, base64: base64Image?.includes("base64,") ? base64Image.split("base64,")[1] : base64Image };
+      const uploadBase64 = await prepareProfilePhotoBase64(assetForUpload, base64Image);
+      console.log("📤 Uploading profile photo (KB):", Math.round(uploadBase64.length / 1024));
+      const uploadResult = await get().uploadProfilePhoto(uploadBase64);
 
       if (uploadResult.success) {
         console.log('✅ Profile photo uploaded successfully');
@@ -2295,70 +2331,38 @@ export const useHRMSStore = create<HRMSState>((set, get) => ({
 
       if (response.status === 200 || response.status === 201) {
         // Update employee avatar if URL is returned (backend returns profile_photo)
+        const photoUpdated =
+          response.data?.is_photo_updated !== false;
+
+        set((state) => ({
+          employee: {
+            ...state.employee,
+            avatar: response.data?.profile_photo || state.employee.avatar,
+            isPhotoUpdated: photoUpdated,
+          },
+        }));
+
         if (response.data?.profile_photo) {
-          const photoUrl = response.data.profile_photo;
-          set((state) => ({
-            employee: {
-              ...state.employee,
-              avatar: photoUrl || null,
-            }
-          }));
           console.log('✅ Profile photo stored in state');
         }
-
-        // Step 2: Toggle is_photo_updated to ON (true) after successful upload
-        // This ensures user won't be asked for selfie again on next login
-        // IMPORTANT: Always call this API after successful photo upload
-        try {
-          console.log('🔄 Calling toggleIsPhotoUpdated API to set is_photo_updated = true...');
-          console.log('📋 UserId for toggle API:', userId);
-
-          const toggleResponse = await apiService.toggleIsPhotoUpdated(userId);
-
-          console.log('📋 Toggle API Response:', {
-            status: toggleResponse.status,
-            message: toggleResponse.message,
-            data: toggleResponse.data,
-            fullResponse: toggleResponse
-          });
-
-          // Update employee state flag to true regardless of response format
-          // This prevents camera from opening again
-          set((state) => ({
-            employee: {
-              ...state.employee,
-              isPhotoUpdated: true,
+        if (photoUpdated) {
+          console.log('✅ is_photo_updated set by upload API — selfie prompt disabled');
+        } else {
+          // Upload succeeded but flag missing — fallback to photo-refresh PATCH
+          try {
+            const toggleResponse = await apiService.toggleIsPhotoUpdated(userId, true);
+            if (toggleResponse.status === 200) {
+              set((state) => ({
+                employee: { ...state.employee, isPhotoUpdated: true },
+              }));
+              console.log('✅ is_photo_updated confirmed via photo-refresh API');
             }
-          }));
-
-          if (toggleResponse.status === 200) {
-            console.log('✅ Is photo updated API call successful - flag set to true');
-            if (toggleResponse.data?.is_photo_updated === true) {
-              console.log('✅ Backend confirmed is_photo_updated = true');
-            } else {
-              console.log('⚠️ Backend response format unexpected, but state updated locally');
-            }
-          } else {
-            console.warn('⚠️ Toggle API returned non-200 status:', toggleResponse.status);
-            console.log('✅ State still updated locally to prevent repeated prompts');
+          } catch (toggleError) {
+            console.warn('⚠️ photo-refresh fallback failed; keeping local isPhotoUpdated=true', toggleError);
+            set((state) => ({
+              employee: { ...state.employee, isPhotoUpdated: true },
+            }));
           }
-        } catch (toggleError: any) {
-          console.error('❌ Error calling toggleIsPhotoUpdated API:', toggleError);
-          console.error('❌ Error details:', {
-            message: toggleError?.message,
-            responseData: toggleError?.responseData,
-            status: toggleError?.responseData?.status
-          });
-
-          // CRITICAL: Still update state to prevent repeated camera prompts
-          // Even if API fails, we don't want to ask for photo again
-          set((state) => ({
-            employee: {
-              ...state.employee,
-              isPhotoUpdated: true,
-            }
-          }));
-          console.log('✅ State updated to true despite API error - camera will not open again');
         }
 
         return { success: true };

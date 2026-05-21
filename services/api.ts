@@ -1,47 +1,24 @@
-// Backend URL - .env mein sirf EXPO_PUBLIC_BACKEND_URL (sab jagah yahi)
-import { Platform } from 'react-native';
-import Constants from 'expo-constants';
+// Backend URL — constants/backend.ts + .env (local: http://192.168.10.36:8000)
+import { Platform } from "react-native";
+import Constants from "expo-constants";
 
+import { resolveBackendUrl } from "@/constants/backend";
 import { countryNameFromIsoCode } from "@/utils/punchLocationTime";
+import {
+  compressImageForUpload,
+  compressImagesForUpload,
+  stripDataUriPrefix,
+} from "@/utils/compressImage";
 
-/** Production / dev server — APK build mein .env na bhi load ho to yahi use hoga */
-const DEFAULT_BACKEND_URL = 'https://app.neexq.com';
+export const BACKEND_URL = resolveBackendUrl();
 
-const getBackendUrl = (): string => {
-  const fromExtra = Constants.expoConfig?.extra?.backendUrl as string | undefined;
-  const envUrl =
-    process.env.EXPO_PUBLIC_BACKEND_URL?.trim() ||
-    fromExtra?.trim() ||
-    DEFAULT_BACKEND_URL;
-
-  const isLocal =
-    envUrl.includes('127.0.0.1') || envUrl.includes('localhost');
-
-  // Remote URL (app.neexq.com etc.) — kabhi localhost replace mat karo
-  if (!isLocal) {
-    return envUrl.replace(/\/$/, '');
-  }
-
-  // Sirf local dev: emulator ke liye Android par 10.0.2.2
-  if (__DEV__ && Platform.OS === 'android') {
-    return envUrl.replace(/127\.0\.0\.1|localhost/gi, '10.0.2.2').replace(/\/$/, '');
-  }
-
-  return envUrl.replace(/\/$/, '');
-};
-
-/** Backend URL - .env se EXPO_PUBLIC_BACKEND_URL */
-export const BACKEND_URL = getBackendUrl();
-
-console.log('🚀 Backend URL:', BACKEND_URL);
-console.log('📱 Platform:', Platform.OS);
-console.log('🔧 App Ownership:', Constants.appOwnership);
-console.log('🌐 Network Info:', {
-  isExpoGo: Constants.appOwnership === 'expo',
-  isWeb: Platform.OS === 'web',
-  isAndroid: Platform.OS === 'android',
-  isIOS: Platform.OS === 'ios',
-});
+if (__DEV__) {
+  console.warn("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+  console.warn("🚀 API BACKEND:", BACKEND_URL);
+  console.warn("📱 Device:", Constants.isDevice ? "physical" : "simulator/emulator");
+  console.warn("📡 Metro hostUri:", Constants.expoConfig?.hostUri ?? "n/a");
+  console.warn("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+}
 
 export interface LoginRequest {
   username: string;
@@ -465,7 +442,16 @@ class ApiService {
         const text = await response.text();
         console.error('❌ Response Type: Non-JSON');
         console.error('❌ Response Text:', text.substring(0, 200));
-        throw new Error(text || `HTTP ${response.status}: ${response.statusText}`);
+        if (response.status === 413 || text.includes("413")) {
+          throw new Error(
+            "Photo is too large for the server. Please capture again — the app will compress the image automatically."
+          );
+        }
+        throw new Error(
+          response.status >= 500
+            ? `Server error (${response.status}). Please try again later.`
+            : `Request failed (${response.status}). Please try again.`
+        );
       }
 
       if (!response.ok) {
@@ -573,6 +559,11 @@ class ApiService {
       throw new Error(text || `HTTP ${response.status}: ${response.statusText}`);
     }
     if (!response.ok) {
+      if (response.status === 413) {
+        throw new Error(
+          "Photo is too large for the server. Please capture again — the app will compress automatically."
+        );
+      }
       const errMsg =
         (data as { message?: string }).message ||
         `HTTP ${response.status}: ${response.statusText}`;
@@ -635,15 +626,12 @@ class ApiService {
     const body: any = {
       marked_by: "mobile"
     };
-    if (base64Images && base64Images.length > 0) {
-      body.base64_images = base64Images;
-    }
-
+    // Standard check-in does not store base64_images on server — omit to avoid nginx 413
     if (isCheckIn && threeSData) {
       body.three_s_work_type = threeSData.workType;
       body.three_s_lift_installation_number = threeSData.liftInstallationNumber;
-      body.three_s_lift_image = threeSData.liftImage;
-      body.three_s_selfie_image = threeSData.selfieImage;
+      body.three_s_lift_image = await compressImageForUpload(threeSData.liftImage);
+      body.three_s_selfie_image = await compressImageForUpload(threeSData.selfieImage);
     }
 
     let merged: PunchCountryMeta | null = countryMeta ? { ...countryMeta } : null;
@@ -1544,41 +1532,46 @@ class ApiService {
     return response;
   }
 
-  // Is Photo Updated Toggle API
-  async toggleIsPhotoUpdated(userId: string): Promise<{ status: number; message: string; data?: any }> {
-    const url = `/api/is-photo-updated/${userId}`;
-    console.log('🔍 Toggling is_photo_updated for userId:', userId);
-    const response = await this.request<{ status: number; message: string; data?: any }>(
-      url,
-      { method: 'POST' },
-      true
-    );
-    console.log('🔍 Is photo updated toggle response:', response);
-    return response;
-  }
-
-  // Employee Profile Photo Upload API
-  async uploadProfilePhoto(
+  // Photo refresh toggle — same as web admin (PATCH photo-refresh/<user_id>)
+  async toggleIsPhotoUpdated(
     userId: string,
-    base64Image: string
-  ): Promise<{ status: number; message: string; data?: { profile_photo?: string; is_photo_updated?: boolean } }> {
-    const url = `/api/employee/profile-photo-upload/${userId}`;
-    console.log('📤 Uploading profile photo for userId:', userId);
-
-    // Backend expects base64_image field (not profile_photo)
-    const body = {
-      base64_image: base64Image,
-    };
-
-    const response = await this.request<{ status: number; message: string; data?: { profile_photo?: string; is_photo_updated?: boolean } }>(
+    isPhotoUpdated = true
+  ): Promise<{ status: number; message: string; data?: { is_photo_updated?: boolean } }> {
+    const url = `/api/photo-refresh/${userId}`;
+    console.log('🔍 Setting is_photo_updated for userId:', userId, '→', isPhotoUpdated);
+    const response = await this.request<{
+      status: number;
+      message: string;
+      data?: { is_photo_updated?: boolean };
+    }>(
       url,
       {
-        method: 'POST',
-        body: JSON.stringify(body),
+        method: 'PATCH',
+        body: JSON.stringify({ is_photo_updated: isPhotoUpdated }),
       },
       true
     );
-    console.log('📤 Profile photo upload response:', response);
+    console.log('🔍 Photo refresh toggle response:', response);
+    return response;
+  }
+
+  // Employee Profile Photo Upload API — expects pre-compressed raw base64 (no data: prefix)
+  async uploadProfilePhoto(
+    userId: string,
+    rawBase64: string
+  ): Promise<{ status: number; message: string; data?: { profile_photo?: string; is_photo_updated?: boolean } }> {
+    const url = `/api/employee/profile-photo-upload/${userId}`;
+    const payload = stripDataUriPrefix(rawBase64);
+    console.log("📤 Uploading profile photo for userId:", userId, "sizeKB:", Math.round(payload.length / 1024));
+
+    const body = { base64_image: payload };
+
+    const response = await this.request<{
+      status: number;
+      message: string;
+      data?: { profile_photo?: string; is_photo_updated?: boolean };
+    }>(url, { method: "POST", body: JSON.stringify(body) }, true);
+    console.log("📤 Profile photo upload response:", response.status);
     return response;
   }
 
@@ -1718,11 +1711,14 @@ class ApiService {
       const blob = await response.blob();
       formData.append("file", blob, file.name);
     } else {
-      formData.append("file", {
-        uri: file.uri,
-        name: file.name,
-        type: file.type,
-      } as { uri: string; name: string; type: string });
+      formData.append(
+        "file",
+        {
+          uri: file.uri,
+          name: file.name,
+          type: file.type,
+        } as unknown as Blob
+      );
     }
 
     if (folderId != null) {
@@ -2298,7 +2294,18 @@ export interface TaskAPI {
 export interface TaskListAPIResponse {
   status: number;
   message: string;
-  data?: TaskAPI[];
+  data?: TaskAPI[] | { results?: TaskAPI[]; data?: TaskAPI[] };
+}
+
+/** Normalize employee task list from API (array or paginated wrapper). */
+export function parseEmployeeTaskList(data: TaskListAPIResponse['data'] | unknown): TaskAPI[] {
+  if (Array.isArray(data)) return data;
+  if (data && typeof data === 'object') {
+    const nested = data as { results?: TaskAPI[]; data?: TaskAPI[] };
+    if (Array.isArray(nested.results)) return nested.results;
+    if (Array.isArray(nested.data)) return nested.data;
+  }
+  return [];
 }
 
 export interface TaskUpdateAPIResponse {

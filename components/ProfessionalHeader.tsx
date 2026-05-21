@@ -87,7 +87,7 @@ export function ProfessionalHeader({
           {!title && route.name === "Home" ? (
             <View style={styles.logoContainer}>
               <Image
-                source={require("../assets/images/logo4.png")}
+                source={require("../assets/images/icon.png")}
                 style={styles.logo}
                 resizeMode="contain"
               />
