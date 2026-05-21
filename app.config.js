@@ -1,11 +1,13 @@
 /**
- * MOBILE/.env — sirf ek EXPO_PUBLIC_BACKEND_URL uncomment rakho.
+ * Backend URL: EAS eas.json env → process.env, phir local MOBILE/.env.
  */
 const fs = require("fs");
 const path = require("path");
 
-const envPath = path.join(__dirname, ".env");
-if (fs.existsSync(envPath)) {
+function loadBackendUrlFromDotEnv() {
+  if (process.env.EXPO_PUBLIC_BACKEND_URL?.trim()) return;
+  const envPath = path.join(__dirname, ".env");
+  if (!fs.existsSync(envPath)) return;
   fs.readFileSync(envPath, "utf8")
     .split("\n")
     .forEach((line) => {
@@ -20,10 +22,12 @@ if (fs.existsSync(envPath)) {
     });
 }
 
+loadBackendUrlFromDotEnv();
+
 const backendUrl = process.env.EXPO_PUBLIC_BACKEND_URL?.trim();
 if (!backendUrl) {
   throw new Error(
-    "MOBILE/.env: EXPO_PUBLIC_BACKEND_URL ki ek line uncomment karo."
+    "EXPO_PUBLIC_BACKEND_URL missing. Local: MOBILE/.env uncomment karo. EAS: eas.json profile env ya expo.dev → Environment variables."
   );
 }
 

@@ -1,11 +1,15 @@
 {
   "cli": {
-    "version": ">= 12.0.0"
+    "version": ">= 12.0.0",
+    "appVersionSource": "local"
   },
   "build": {
     "development": {
       "developmentClient": true,
       "distribution": "internal",
+      "env": {
+        "EXPO_PUBLIC_BACKEND_URL": "https://app.neexq.com"
+      },
       "android": {
         "gradleCommand": ":app:assembleDebug"
       },
@@ -15,12 +19,18 @@
     },
     "preview-local": {
       "distribution": "internal",
+      "env": {
+        "EXPO_PUBLIC_BACKEND_URL": "https://app.neexq.com"
+      },
       "android": {
         "buildType": "apk"
       }
     },
     "preview": {
       "distribution": "internal",
+      "env": {
+        "EXPO_PUBLIC_BACKEND_URL": "https://app.neexq.com"
+      },
       "android": {
         "buildType": "apk"
       },
@@ -29,6 +39,9 @@
       }
     },
     "production": {
+      "env": {
+        "EXPO_PUBLIC_BACKEND_URL": "https://app.neexq.com"
+      },
       "android": {
         "buildType": "app-bundle"
       },
