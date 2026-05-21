@@ -13,7 +13,11 @@ if (fs.existsSync(envPath)) {
     if (m) process.env.EXPO_METRO_URL = m[1].trim().replace(/^["']|["']$/g, "");
   });
 }
-const METRO_BASE_URL = process.env.EXPO_METRO_URL || "http://localhost:8081";
+const METRO_BASE_URL = process.env.EXPO_METRO_URL;
+if (!METRO_BASE_URL) {
+  console.error("MOBILE/.env mein EXPO_METRO_URL set karo (e.g. http://127.0.0.1:8081)");
+  process.exit(1);
+}
 
 let metroProcess = null;
 

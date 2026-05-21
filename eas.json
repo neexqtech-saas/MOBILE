@@ -4,9 +4,6 @@
   },
   "build": {
     "development": {
-      "env": {
-        "EXPO_PUBLIC_BACKEND_URL": "http://192.168.10.36:8000"
-      },
       "developmentClient": true,
       "distribution": "internal",
       "android": {
@@ -17,18 +14,12 @@
       }
     },
     "preview-local": {
-      "env": {
-        "EXPO_PUBLIC_BACKEND_URL": "http://192.168.10.36:8000"
-      },
       "distribution": "internal",
       "android": {
         "buildType": "apk"
       }
     },
     "preview": {
-      "env": {
-        "EXPO_PUBLIC_BACKEND_URL": "http://192.168.10.36:8000"
-      },
       "distribution": "internal",
       "android": {
         "buildType": "apk"
@@ -38,9 +29,6 @@
       }
     },
     "production": {
-      "env": {
-        "EXPO_PUBLIC_BACKEND_URL": "http://192.168.10.36:8000"
-      },
       "android": {
         "buildType": "app-bundle"
       },
@@ -64,4 +52,3 @@
     }
   }
 }
-

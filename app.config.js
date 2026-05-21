@@ -1,6 +1,5 @@
 /**
- * Loads .env at build time so EXPO_PUBLIC_BACKEND_URL is embedded in the APK/IPA.
- * Rebuild required after changing .env: npx expo run:android --variant release
+ * MOBILE/.env — sirf ek EXPO_PUBLIC_BACKEND_URL uncomment rakho.
  */
 const fs = require("fs");
 const path = require("path");
@@ -10,7 +9,9 @@ if (fs.existsSync(envPath)) {
   fs.readFileSync(envPath, "utf8")
     .split("\n")
     .forEach((line) => {
-      const m = line.match(/^\s*EXPO_PUBLIC_BACKEND_URL\s*=\s*(.+)\s*$/);
+      const trimmed = line.trim();
+      if (!trimmed || trimmed.startsWith("#")) return;
+      const m = trimmed.match(/^EXPO_PUBLIC_BACKEND_URL\s*=\s*(.+)$/);
       if (m) {
         process.env.EXPO_PUBLIC_BACKEND_URL = m[1]
           .trim()
@@ -19,17 +20,21 @@ if (fs.existsSync(envPath)) {
     });
 }
 
-const appJson = require("./app.json");
+const backendUrl = process.env.EXPO_PUBLIC_BACKEND_URL?.trim();
+if (!backendUrl) {
+  throw new Error(
+    "MOBILE/.env: EXPO_PUBLIC_BACKEND_URL ki ek line uncomment karo."
+  );
+}
 
-const backendUrl =
-  process.env.EXPO_PUBLIC_BACKEND_URL?.trim() || "http://192.168.10.36:8000";
+const appJson = require("./app.json");
 
 module.exports = {
   expo: {
     ...appJson.expo,
     extra: {
       ...appJson.expo.extra,
-      backendUrl,
+      backendUrl: backendUrl.replace(/\/$/, ""),
     },
   },
 };

@@ -1,4 +1,4 @@
-// Backend URL — constants/backend.ts + .env (local: http://192.168.10.36:8000)
+// Backend URL — sirf MOBILE/.env → constants/backend.ts
 import { Platform } from "react-native";
 import Constants from "expo-constants";
 
@@ -508,16 +508,15 @@ class ApiService {
           console.error('❌ Error Type: Network Error');
           console.error('❌ Error Message:', error.message);
           console.error('💡 Troubleshooting Steps:');
-          console.error('   1. Check backend server is running: python manage.py runserver 0.0.0.0:8000');
-          console.error('   2. Verify phone and computer are on same WiFi network');
-          console.error('   3. Check firewall allows port 8000');
-          console.error('   4. Verify backend is running: python manage.py runserver 0.0.0.0:8000');
-          console.error('   5. Test URL in browser:', BACKEND_URL + endpoint);
-          console.error('   6. Current API URL:', url);
+          console.error('   1. Backend chal raha hai? (manage.py runserver)');
+          console.error('   2. Phone aur PC same WiFi par hain?');
+          console.error('   3. MOBILE/.env mein sahi EXPO_PUBLIC_BACKEND_URL uncomment hai?');
+          console.error('   4. Test URL:', BACKEND_URL + endpoint);
+          console.error('   5. Request URL:', url);
           console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
           console.log('');
 
-          const detailedError = `Network Error: Cannot connect to server at ${BACKEND_URL}\n\nPlease check:\n1. Backend server is running (python manage.py runserver 0.0.0.0:8000)\n2. For physical devices: Ensure device and computer are on same network\n3. Firewall allows port 8000\n4. .env mein EXPO_PUBLIC_BACKEND_URL sahi set hai?`;
+          const detailedError = `Network Error: Cannot connect to ${BACKEND_URL}\n\nCheck MOBILE/.env — sirf ek EXPO_PUBLIC_BACKEND_URL uncomment ho, phir: npx expo start -c`;
           throw new Error(detailedError);
         }
         console.error('❌ Error Type: Other Error');
